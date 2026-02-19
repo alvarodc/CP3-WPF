@@ -1,6 +1,7 @@
 using CardPass3.WPF.Data.Models;
 
-namespace CardPass3.WPF.Services.Readers;
+namespace CardPass3.WPF.Services.Readers
+{
 
 /// <summary>
 /// Abstraction over the hardware TCP/IP communication library.

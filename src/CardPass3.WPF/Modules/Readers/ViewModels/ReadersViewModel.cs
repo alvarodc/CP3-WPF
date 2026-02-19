@@ -5,7 +5,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
 
-namespace CardPass3.WPF.Modules.Readers.ViewModels;
+namespace CardPass3.WPF.Modules.Readers.ViewModels
+{
 
 public partial class ReadersViewModel : ObservableObject
 {

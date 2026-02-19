@@ -1,7 +1,8 @@
 using CardPass3.WPF.Modules.Readers.ViewModels;
 using System.Windows.Controls;
 
-namespace CardPass3.WPF.Modules.Readers.Views;
+namespace CardPass3.WPF.Modules.Readers.Views
+{
 
 public partial class ReadersView : UserControl
 {

@@ -4,7 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Windows;
 using System.Windows.Threading;
 
-namespace CardPass3.WPF.Modules.Shell.Views;
+namespace CardPass3.WPF.Modules.Shell.Views
+{
 
 public partial class ShellWindow : Window
 {

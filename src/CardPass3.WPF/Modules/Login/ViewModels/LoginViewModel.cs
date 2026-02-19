@@ -4,7 +4,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
 
-namespace CardPass3.WPF.Modules.Login.ViewModels;
+namespace CardPass3.WPF.Modules.Login.ViewModels
+{
 
 public partial class LoginViewModel : ObservableObject
 {

@@ -4,7 +4,8 @@ using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 
-namespace CardPass3.WPF.Services.Readers;
+namespace CardPass3.WPF.Services.Readers
+{
 
 // ─── Connection state ────────────────────────────────────────────────────────
 

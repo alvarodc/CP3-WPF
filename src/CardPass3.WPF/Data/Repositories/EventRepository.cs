@@ -3,7 +3,8 @@ using CardPass3.WPF.Data.Repositories.Interfaces;
 using CardPass3.WPF.Services.Database;
 using Dapper;
 
-namespace CardPass3.WPF.Data.Repositories;
+namespace CardPass3.WPF.Data.Repositories
+{
 
 public class EventRepository(IDatabaseConnectionFactory db) : IEventRepository
 {

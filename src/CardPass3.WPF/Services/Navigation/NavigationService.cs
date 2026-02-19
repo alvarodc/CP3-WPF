@@ -1,7 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 
-namespace CardPass3.WPF.Services.Navigation;
-
+namespace CardPass3.WPF.Services.Navigation
+{
 
 public interface INavigationService
 {

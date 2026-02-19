@@ -1,4 +1,5 @@
-namespace CardPass3.WPF.Data.Models;
+namespace CardPass3.WPF.Data.Models
+{
 
 // ─── readers ────────────────────────────────────────────────────────────────
 public class Reader

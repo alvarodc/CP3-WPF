@@ -4,7 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using System.Windows;
 using System.Windows.Input;
 
-namespace CardPass3.WPF.Modules.Login.Views;
+namespace CardPass3.WPF.Modules.Login.Views
+{
 
 public partial class LoginWindow : Window
 {

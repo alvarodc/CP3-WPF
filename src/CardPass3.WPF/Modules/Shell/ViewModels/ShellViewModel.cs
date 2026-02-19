@@ -4,7 +4,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
 
-namespace CardPass3.WPF.Modules.Shell.ViewModels;
+namespace CardPass3.WPF.Modules.Shell.ViewModels
+{
 
 public partial class ShellViewModel : ObservableObject
 {

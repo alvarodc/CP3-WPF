@@ -8,11 +8,9 @@ using CardPass3.WPF.Modules.Shell.Views;
 using CardPass3.WPF.Services.Database;
 using CardPass3.WPF.Services.Navigation;
 using CardPass3.WPF.Services.Readers;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Serilog;
-using System.IO;
 using System.Windows;
 
 namespace CardPass3.WPF
@@ -29,18 +27,26 @@ namespace CardPass3.WPF
 
             Log.Logger = new LoggerConfiguration()
                 .MinimumLevel.Debug()
-                .WriteTo.File("logs/cardpass3-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 30)
+                .WriteTo.File("logs/cardpass3-.log",
+                    rollingInterval: RollingInterval.Day,
+                    retainedFileCountLimit: 30)
                 .CreateLogger();
 
             _host = Host.CreateDefaultBuilder()
                 .UseSerilog()
-                .ConfigureAppConfiguration(cfg => cfg
-                    .SetBasePath(Directory.GetCurrentDirectory())
-                    .AddJsonFile("appsettings.json", optional: false))
                 .ConfigureServices(ConfigureServices)
                 .Build();
 
             await _host.StartAsync();
+
+            // Si no existe el fichero de configuración de BD, generarlo con valores por defecto
+            // El usuario podrá modificarlos desde Configuración > Base de datos
+            var dbConfigService = _host.Services.GetRequiredService<IDatabaseConfigService>();
+            if (!dbConfigService.Exists)
+            {
+                dbConfigService.GenerateDefault();
+                Log.Information("Primer arranque: fichero de configuración de BD generado en ProgramData.");
+            }
 
             var loginWindow = _host.Services.GetRequiredService<LoginWindow>();
             loginWindow.Show();
@@ -48,21 +54,29 @@ namespace CardPass3.WPF
 
         private static void ConfigureServices(IServiceCollection services)
         {
+            // ── Database config & connection ──────────────────────────────────
+            // DatabaseConfigService lee/escribe %ProgramData%\CardPass3\Database\cp3db.config.json
+            // Si el fichero no existe lo crea con valores por defecto.
+            services.AddSingleton<IDatabaseConfigService, DatabaseConfigService>();
             services.AddSingleton<IDatabaseConnectionFactory, MySqlConnectionFactory>();
 
+            // ── Repositories ──────────────────────────────────────────────────
             services.AddSingleton<IOperatorRepository, OperatorRepository>();
             services.AddSingleton<IReaderRepository, ReaderRepository>();
             services.AddSingleton<IEventRepository, EventRepository>();
             services.AddSingleton<IConfigurationRepository, ConfigurationRepository>();
 
+            // ── Services ──────────────────────────────────────────────────────
             services.AddSingleton<IReaderDriverFactory, DefaultReaderDriverFactory>();
             services.AddSingleton<IReaderConnectionService, ReaderConnectionService>();
             services.AddSingleton<INavigationService, NavigationService>();
 
+            // ── ViewModels ────────────────────────────────────────────────────
             services.AddTransient<LoginViewModel>();
             services.AddSingleton<ShellViewModel>();
             services.AddSingleton<ReadersViewModel>();
 
+            // ── Views ─────────────────────────────────────────────────────────
             services.AddTransient<LoginWindow>();
             services.AddSingleton<ShellWindow>();
         }

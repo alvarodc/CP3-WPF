@@ -77,3 +77,4 @@ public partial class ShellViewModel : ObservableObject
     [RelayCommand]
     private void Logout() => LogoutRequested?.Invoke(this, EventArgs.Empty);
 }
+}

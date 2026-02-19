@@ -218,3 +218,4 @@ public class ReaderConnectionService : IReaderConnectionService
         App.Current.Dispatcher.Invoke(() => info.State = state);
     }
 }
+}

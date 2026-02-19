@@ -41,3 +41,4 @@ public partial class ShellWindow : Window
             Application.Current.Shutdown();
     }
 }
+}

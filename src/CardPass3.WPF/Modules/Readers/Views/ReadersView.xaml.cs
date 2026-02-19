@@ -12,3 +12,4 @@ public partial class ReadersView : UserControl
         DataContext = viewModel;
     }
 }
+}

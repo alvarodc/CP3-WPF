@@ -96,3 +96,4 @@ public partial class LoginViewModel : ObservableObject
         return string.Equals(computed, storedHash, StringComparison.OrdinalIgnoreCase);
     }
 }
+}

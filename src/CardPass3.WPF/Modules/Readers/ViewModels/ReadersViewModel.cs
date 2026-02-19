@@ -60,3 +60,4 @@ public partial class ReadersViewModel : ObservableObject
 
     private bool CanActOnReader() => SelectedReader is not null && !IsBusy;
 }
+}

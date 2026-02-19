@@ -130,3 +130,4 @@ public class EventRepository(IDatabaseConnectionFactory db) : IEventRepository
             new CommandDefinition("DELETE FROM events WHERE id_event = @id", new { id }, cancellationToken: ct));
     }
 }
+}

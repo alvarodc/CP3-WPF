@@ -97,3 +97,4 @@ public class ReaderRepository(IDatabaseConnectionFactory db) : IReaderRepository
                 new { id }, cancellationToken: ct));
     }
 }
+}

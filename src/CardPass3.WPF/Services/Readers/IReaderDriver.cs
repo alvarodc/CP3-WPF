@@ -98,3 +98,4 @@ internal class StubReaderDriver(Reader reader) : IReaderDriver
     public Task RestartAsync(CancellationToken ct = default)
         => Task.CompletedTask;
 }
+}

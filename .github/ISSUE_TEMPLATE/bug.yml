@@ -1,0 +1,40 @@
+name: "🐛 Bug"
+description: Algo no funciona como debería
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: modulo
+    attributes:
+      label: Módulo afectado
+      options:
+        - Core / Infra
+        - Readers
+        - Events
+        - Users
+        - Hardware
+        - Admin
+    validations:
+      required: true
+  - type: textarea
+    id: descripcion
+    attributes:
+      label: Descripción del problema
+    validations:
+      required: true
+  - type: textarea
+    id: reproduccion
+    attributes:
+      label: Pasos para reproducir
+      placeholder: |
+        1. Ir a...
+        2. Hacer clic en...
+        3. Ver error
+  - type: textarea
+    id: esperado
+    attributes:
+      label: Comportamiento esperado
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / Stack trace
+      render: text

@@ -1,0 +1,23 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.rsuser
+
+## Logs
+logs/
+*.log
+
+## Config local (no subir credenciales)
+appsettings.local.json
+appsettings.Development.json
+
+## Publish
+publish/
+*.nupkg
+
+## OS
+.DS_Store
+Thumbs.db

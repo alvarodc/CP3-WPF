@@ -1,0 +1,54 @@
+name: "✨ Feature / Tarea"
+description: Nueva funcionalidad o tarea de desarrollo
+labels: ["feature"]
+body:
+  - type: dropdown
+    id: iteracion
+    attributes:
+      label: Iteración
+      options:
+        - Iter-1 (Core + Readers + Login)
+        - Iter-2 (Eventos)
+        - Iter-3 (Usuarios)
+        - Iter-4 (Hardware)
+        - Iter-5 (Admin)
+    validations:
+      required: true
+  - type: dropdown
+    id: modulo
+    attributes:
+      label: Módulo
+      options:
+        - Core / Infra
+        - Readers
+        - Events
+        - Users
+        - Hardware
+        - Admin
+    validations:
+      required: true
+  - type: dropdown
+    id: prioridad
+    attributes:
+      label: Prioridad
+      options:
+        - "🔴 Crítica"
+        - "🟠 Alta"
+        - "🟡 Normal"
+        - "🟢 Nice-to-have"
+    validations:
+      required: true
+  - type: textarea
+    id: descripcion
+    attributes:
+      label: Descripción
+      placeholder: Qué hay que hacer y por qué.
+    validations:
+      required: true
+  - type: textarea
+    id: criterios
+    attributes:
+      label: Criterios de aceptación
+      placeholder: |
+        - [ ] Criterio 1
+        - [ ] Criterio 2

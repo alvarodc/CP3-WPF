@@ -1,5 +1,6 @@
 using CardPass3.WPF.Modules.Login.ViewModels;
 using CardPass3.WPF.Modules.Shell.Views;
+using CardPass3.WPF.Services.Database;
 using Microsoft.Extensions.DependencyInjection;
 using System.Windows;
 using System.Windows.Input;
@@ -13,7 +14,7 @@ public partial class LoginWindow : Window
         InitializeComponent();
         DataContext = viewModel;
 
-        viewModel.LoginSucceeded  += OnLoginSucceeded;
+        viewModel.LoginSucceeded   += OnLoginSucceeded;
         viewModel.DbConfigRequired += OnDbConfigRequired;
 
         Loaded += (_, _) => TxtOperator.Focus();
@@ -28,32 +29,34 @@ public partial class LoginWindow : Window
 
     private void OnDbConfigRequired(object? sender, EventArgs e)
     {
-        var result = MessageBox.Show(
-            "No se puede conectar con la base de datos.\n\n" +
-            "Esto puede deberse a que la configuración es incorrecta o a que la " +
-            "contraseña está almacenada en un formato incompatible con esta versión.\n\n" +
-            "¿Deseas abrir la pantalla de configuración de base de datos para " +
-            "revisar y actualizar los parámetros de conexión?",
-            "Error de conexión a la base de datos",
-            MessageBoxButton.YesNo,
-            MessageBoxImage.Warning);
+        var dialog = new DbConnectionErrorDialog();
+        dialog.Owner = this;
+        dialog.ShowDialog();
 
-        if (result == MessageBoxResult.Yes)
+        switch (dialog.Result)
         {
-            // TODO (Iter-5): abrir ventana/panel de configuración de BD
-            // Por ahora indicamos la ruta del fichero para que el técnico lo edite
-            var configPath = System.IO.Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
-                "CardPass3", "Database", "cp3db.config.json");
+            case DbConnectionErrorResult.Configure:
+                // TODO (Iter-5): abrir pantalla de configuración de BD
+                MessageBox.Show(
+                    "La pantalla de configuración de base de datos estará disponible en la próxima versión.",
+                    "Próximamente", MessageBoxButton.OK, MessageBoxImage.Information);
+                break;
 
-            MessageBox.Show(
-                $"El fichero de configuración se encuentra en:\n\n{configPath}\n\n" +
-                "Puedes editarlo manualmente o esperar a que la pantalla de " +
-                "configuración esté disponible en la próxima versión.\n\n" +
-                "Tras modificarlo, reinicia la aplicación.",
-                "Configuración de base de datos",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            case DbConnectionErrorResult.Reset:
+                var dbConfig = App.Services.GetRequiredService<IDatabaseConfigService>();
+                dbConfig.ResetToDefault();
+                MessageBox.Show(
+                    "La configuración se ha restablecido a los valores por defecto.\n\n" +
+                    "  Servidor:  localhost\n" +
+                    "  Puerto:    3306\n" +
+                    "  Usuario:   cardpass3\n" +
+                    "  Contraseña: cardpass3\n" +
+                    "  Base de datos: cardpass3\n\n" +
+                    "Vuelve a intentar iniciar sesión.",
+                    "Configuración restablecida", MessageBoxButton.OK, MessageBoxImage.Information);
+                break;
+
+            // DbConnectionErrorResult.Back → no hacer nada, el usuario vuelve al login
         }
     }
 

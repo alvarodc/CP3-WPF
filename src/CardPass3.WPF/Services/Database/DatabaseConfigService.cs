@@ -17,6 +17,7 @@ public interface IDatabaseConfigService
     /// </summary>
     bool IsPasswordCorrupted { get; }
     void GenerateDefault();
+    void ResetToDefault();
     bool TestConnection(DatabaseConfig config, string plainPassword);
 }
 
@@ -77,7 +78,18 @@ public class DatabaseConfigService : IDatabaseConfigService
     public void GenerateDefault()
     {
         _logger.LogInformation("Generando configuración de BD por defecto en {Path}", ConfigFile);
-        Save(new DatabaseConfig(), plainPassword: string.Empty);
+        Save(new DatabaseConfig(), plainPassword: "cardpass3");
+    }
+
+    /// <summary>
+    /// Restablece el fichero de configuración a los valores de instalación por defecto,
+    /// cifrando la contraseña "cardpass3" con el algoritmo actual.
+    /// </summary>
+    public void ResetToDefault()
+    {
+        _logger.LogInformation("Restableciendo configuración de BD a valores por defecto en {Path}", ConfigFile);
+        IsPasswordCorrupted = false;
+        Save(new DatabaseConfig(), plainPassword: "cardpass3");
     }
 
     public bool TestConnection(DatabaseConfig config, string plainPassword)
@@ -136,8 +148,7 @@ public class DatabaseConfigService : IDatabaseConfigService
         catch (Exception ex)
         {
             _logger.LogWarning(
-                "No se pudo descifrar la contraseña de BD (formato antiguo o corrupto): {Error}. " +
-                "Se usará contraseña vacía — el usuario debe reconfigurar la conexión.",
+                "Contraseña de BD en formato incompatible (versión anterior o corrupta): {Error}.",
                 ex.Message);
             IsPasswordCorrupted = true;
             return string.Empty;

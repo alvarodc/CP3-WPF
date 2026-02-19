@@ -1,11 +1,9 @@
+using Microsoft.Extensions.Configuration;
 using MySqlConnector;
 using System.Data;
 
 namespace CardPass3.WPF.Services.Database;
 
-/// <summary>
-/// Provides MySQL connections. Connection string is loaded from appsettings.json.
-/// </summary>
 public interface IDatabaseConnectionFactory
 {
     IDbConnection CreateConnection();
@@ -19,16 +17,15 @@ public class MySqlConnectionFactory : IDatabaseConnectionFactory
     public MySqlConnectionFactory(IConfiguration configuration)
     {
         _connectionString = configuration.GetConnectionString("CardPass3")
-            ?? throw new InvalidOperationException("Connection string 'CardPass3' not found in configuration.");
+            ?? throw new InvalidOperationException("Connection string 'CardPass3' not found.");
     }
 
-    public IDbConnection CreateConnection()
-        => new MySqlConnection(_connectionString);
+    public IDbConnection CreateConnection() => new MySqlConnection(_connectionString);
 
     public async Task<IDbConnection> CreateOpenConnectionAsync(CancellationToken ct = default)
     {
-        var connection = new MySqlConnection(_connectionString);
-        await connection.OpenAsync(ct);
-        return connection;
+        var conn = new MySqlConnection(_connectionString);
+        await conn.OpenAsync(ct);
+        return conn;
     }
 }

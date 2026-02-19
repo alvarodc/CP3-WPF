@@ -39,7 +39,7 @@ public class Operator
 }
 
 // ─── events ─────────────────────────────────────────────────────────────────
-public class Event
+public class DbEvent
 {
     public int IdEvent { get; set; }
     public DateTime? DatetimeUtc { get; set; }

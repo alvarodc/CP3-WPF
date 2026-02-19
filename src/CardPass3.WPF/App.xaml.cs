@@ -2,85 +2,82 @@ using CardPass3.WPF.Data.Repositories;
 using CardPass3.WPF.Data.Repositories.Interfaces;
 using CardPass3.WPF.Modules.Login.ViewModels;
 using CardPass3.WPF.Modules.Login.Views;
+using CardPass3.WPF.Modules.Readers.ViewModels;
 using CardPass3.WPF.Modules.Shell.ViewModels;
 using CardPass3.WPF.Modules.Shell.Views;
 using CardPass3.WPF.Services.Database;
 using CardPass3.WPF.Services.Navigation;
 using CardPass3.WPF.Services.Readers;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Serilog;
+using System.IO;
 using System.Windows;
 
-namespace CardPass3.WPF;
-
-public partial class App : Application
+namespace CardPass3.WPF
 {
-    private IHost? _host;
-
-    public static IServiceProvider Services => ((App)Current)._host!.Services;
-
-    protected override async void OnStartup(StartupEventArgs e)
+    public partial class App : Application
     {
-        base.OnStartup(e);
+        private IHost? _host;
 
-        // Configure Serilog
-        Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Debug()
-            .WriteTo.File("logs/cardpass3-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 30)
-            .CreateLogger();
+        public static IServiceProvider Services => ((App)Current)._host!.Services;
 
-        _host = Host.CreateDefaultBuilder()
-            .UseSerilog()
-            .ConfigureServices(ConfigureServices)
-            .Build();
-
-        await _host.StartAsync();
-
-        // Show login window
-        var loginWindow = _host.Services.GetRequiredService<LoginWindow>();
-        loginWindow.Show();
-    }
-
-    private static void ConfigureServices(IServiceCollection services)
-    {
-        // --- Infrastructure ---
-        services.AddSingleton<IDatabaseConnectionFactory, MySqlConnectionFactory>();
-
-        // --- Repositories ---
-        services.AddSingleton<IOperatorRepository, OperatorRepository>();
-        services.AddSingleton<IReaderRepository, ReaderRepository>();
-        services.AddSingleton<IEventRepository, EventRepository>();
-        services.AddSingleton<IConfigurationRepository, ConfigurationRepository>();
-
-        // --- Services ---
-        services.AddSingleton<IReaderConnectionService, ReaderConnectionService>();
-        services.AddSingleton<INavigationService, NavigationService>();
-
-        // --- ViewModels ---
-        services.AddTransient<LoginViewModel>();
-        services.AddSingleton<ShellViewModel>();
-        services.AddSingleton<ReadersViewModel>();
-
-        // --- Views (Windows) ---
-        services.AddTransient<LoginWindow>();
-        services.AddSingleton<ShellWindow>();
-    }
-
-    protected override async void OnExit(ExitEventArgs e)
-    {
-        if (_host is not null)
+        protected override async void OnStartup(StartupEventArgs e)
         {
-            // Gracefully disconnect all readers on exit
-            var readerService = _host.Services.GetRequiredService<IReaderConnectionService>();
-            await readerService.DisconnectAllAsync();
+            base.OnStartup(e);
 
-            await _host.StopAsync();
-            _host.Dispose();
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.File("logs/cardpass3-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 30)
+                .CreateLogger();
+
+            _host = Host.CreateDefaultBuilder()
+                .UseSerilog()
+                .ConfigureAppConfiguration(cfg => cfg
+                    .SetBasePath(Directory.GetCurrentDirectory())
+                    .AddJsonFile("appsettings.json", optional: false))
+                .ConfigureServices(ConfigureServices)
+                .Build();
+
+            await _host.StartAsync();
+
+            var loginWindow = _host.Services.GetRequiredService<LoginWindow>();
+            loginWindow.Show();
         }
 
-        Log.CloseAndFlush();
-        base.OnExit(e);
+        private static void ConfigureServices(IServiceCollection services)
+        {
+            services.AddSingleton<IDatabaseConnectionFactory, MySqlConnectionFactory>();
+
+            services.AddSingleton<IOperatorRepository, OperatorRepository>();
+            services.AddSingleton<IReaderRepository, ReaderRepository>();
+            services.AddSingleton<IEventRepository, EventRepository>();
+            services.AddSingleton<IConfigurationRepository, ConfigurationRepository>();
+
+            services.AddSingleton<IReaderDriverFactory, DefaultReaderDriverFactory>();
+            services.AddSingleton<IReaderConnectionService, ReaderConnectionService>();
+            services.AddSingleton<INavigationService, NavigationService>();
+
+            services.AddTransient<LoginViewModel>();
+            services.AddSingleton<ShellViewModel>();
+            services.AddSingleton<ReadersViewModel>();
+
+            services.AddTransient<LoginWindow>();
+            services.AddSingleton<ShellWindow>();
+        }
+
+        protected override async void OnExit(ExitEventArgs e)
+        {
+            if (_host is not null)
+            {
+                var readerService = _host.Services.GetRequiredService<IReaderConnectionService>();
+                await readerService.DisconnectAllAsync();
+                await _host.StopAsync();
+                _host.Dispose();
+            }
+            Log.CloseAndFlush();
+            base.OnExit(e);
+        }
     }
 }

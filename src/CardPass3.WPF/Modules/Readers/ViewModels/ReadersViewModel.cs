@@ -15,6 +15,9 @@ public partial class ReadersViewModel : ObservableObject
     public ReadOnlyObservableCollection<ReaderConnectionInfo> Readers
         => _connectionService.Readers;
 
+    public int ConnectedCount => Readers.Count(r => r.State == ReaderConnectionState.Connected);
+    public int TotalCount     => Readers.Count;
+
     [ObservableProperty]
     private ReaderConnectionInfo? _selectedReader;
 

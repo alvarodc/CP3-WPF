@@ -2,9 +2,7 @@ using CardPass3.WPF.Data.Repositories.Interfaces;
 using CardPass3.WPF.Services.Readers;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using System.Windows;
 
 namespace CardPass3.WPF.Modules.Login.ViewModels;
 
@@ -19,10 +17,19 @@ public partial class LoginViewModel : ObservableObject
     private string _operatorName = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasError))]
     private string _errorMessage = string.Empty;
+
+    public bool HasError => !string.IsNullOrEmpty(ErrorMessage);
 
     [ObservableProperty]
     private bool _isLoggingIn;
+
+    /// <summary>
+    /// Raised on successful login. LoginWindow subscribes and handles
+    /// opening the Shell + closing itself — no View references needed here.
+    /// </summary>
+    public event EventHandler? LoginSucceeded;
 
     public LoginViewModel(
         IOperatorRepository operatorRepo,
@@ -56,15 +63,11 @@ public partial class LoginViewModel : ObservableObject
 
             _logger.LogInformation("Operator '{Name}' logged in successfully.", OperatorName);
 
-            // Open main shell
-            var shell = App.Services.GetRequiredService<ShellWindow>();
-            shell.Show();
-
-            // Start reader connections asynchronously — shell is already usable
+            // Start reader connections in background — Shell will be usable immediately
             _ = Task.Run(() => _readerService.StartAsync());
 
-            // Close login window
-            Application.Current.Windows.OfType<LoginWindow>().FirstOrDefault()?.Close();
+            // Notify the View to handle the window transition
+            LoginSucceeded?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception ex)
         {
@@ -80,8 +83,8 @@ public partial class LoginViewModel : ObservableObject
     private bool CanLogin() => !string.IsNullOrWhiteSpace(OperatorName);
 
     /// <summary>
-    /// Verifies password against the hex-encoded SHA-256 hash stored in the DB.
-    /// The original system stores passwords as space-separated hex bytes.
+    /// Verifies the password against the hex-encoded SHA-256 hash stored in the DB.
+    /// The original system stores passwords as space-separated uppercase hex bytes.
     /// </summary>
     private static bool VerifyPassword(string plaintext, string storedHash)
     {
@@ -92,7 +95,3 @@ public partial class LoginViewModel : ObservableObject
         return string.Equals(computed, storedHash, StringComparison.OrdinalIgnoreCase);
     }
 }
-
-// Forward declaration — LoginWindow and ShellWindow are defined in their Views folders
-public class LoginWindow : Window { }
-public class ShellWindow : Window { }

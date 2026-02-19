@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace CardPass3.WPF.Services.Navigation;
 
+
 public interface INavigationService
 {
     object? Resolve(string moduleName);

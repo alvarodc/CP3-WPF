@@ -1,0 +1,185 @@
+<UserControl x:Class="CardPass3.WPF.Modules.Readers.Views.ReadersView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:conv="clr-namespace:CardPass3.WPF.Core.Converters"
+             xmlns:vm="clr-namespace:CardPass3.WPF.Modules.Readers.ViewModels">
+
+    <UserControl.Resources>
+        <conv:ReaderStateToLabelConverter   x:Key="StateLabel"/>
+        <conv:ReaderStateToBrushConverter   x:Key="StateBrush"/>
+        <conv:BoolToVisibilityConverter     x:Key="BoolToVis"/>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>  <!-- Header + toolbar -->
+            <RowDefinition Height="*"/>     <!-- Grid -->
+            <RowDefinition Height="Auto"/>  <!-- Action bar -->
+        </Grid.RowDefinitions>
+
+        <!-- ── HEADER ────────────────────────────────────────── -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,16">
+            <StackPanel DockPanel.Dock="Left">
+                <TextBlock Text="Lectores"
+                           FontFamily="Segoe UI Light"
+                           FontSize="22"
+                           Foreground="{StaticResource TextPrimaryBrush}"/>
+                <TextBlock FontFamily="Segoe UI"
+                           FontSize="12"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Margin="0,2,0,0">
+                    <Run Text="{Binding ConnectedCount, Mode=OneWay}"/>
+                    <Run Text=" conectados de "/>
+                    <Run Text="{Binding TotalCount, Mode=OneWay}"/>
+                </TextBlock>
+            </StackPanel>
+
+            <!-- Toolbar (right side) -->
+            <StackPanel DockPanel.Dock="Right"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center">
+                <Button Content="Conectar"
+                        Style="{StaticResource Btn.Primary}"
+                        Command="{Binding ConnectReaderCommand}"
+                        Margin="0,0,8,0"/>
+                <Button Content="Desconectar"
+                        Style="{StaticResource Btn.Ghost}"
+                        Command="{Binding DisconnectReaderCommand}"
+                        Margin="0,0,8,0"/>
+                <Button Content="Abrir relé"
+                        Style="{StaticResource Btn.Ghost}"
+                        Command="{Binding OpenRelayCommand}"/>
+            </StackPanel>
+        </DockPanel>
+
+        <!-- ── READERS GRID ───────────────────────────────────── -->
+        <Border Grid.Row="1" Style="{StaticResource Card}" Padding="0">
+            <DataGrid Style="{StaticResource Grid.Base}"
+                      ItemsSource="{Binding Readers}"
+                      SelectedItem="{Binding SelectedReader}"
+                      RowHeight="42">
+
+                <!-- Estado -->
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="Estado" Width="120" SortMemberPath="State">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource Badge.State}"
+                                        Background="{Binding State, Converter={StaticResource StateBrush}}">
+                                    <TextBlock Text="{Binding State, Converter={StaticResource StateLabel}}"
+                                               FontFamily="Segoe UI Semibold"
+                                               FontSize="11"
+                                               Foreground="White"/>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Descripción -->
+                    <DataGridTextColumn Header="Descripción"
+                                        Binding="{Binding Reader.ReaderDescription}"
+                                        Width="*">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontFamily" Value="Segoe UI Semibold"/>
+                                <Setter Property="FontSize" Value="12"/>
+                                <Setter Property="VerticalAlignment" Value="Center"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+
+                    <!-- IP -->
+                    <DataGridTextColumn Header="Dirección IP"
+                                        Binding="{Binding Reader.EffectiveIp}"
+                                        Width="140">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontFamily" Value="Consolas"/>
+                                <Setter Property="FontSize" Value="12"/>
+                                <Setter Property="VerticalAlignment" Value="Center"/>
+                                <Setter Property="Foreground" Value="#546E7A"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+
+                    <!-- Puerto -->
+                    <DataGridTextColumn Header="Puerto"
+                                        Binding="{Binding Reader.Port}"
+                                        Width="70">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontFamily" Value="Consolas"/>
+                                <Setter Property="FontSize" Value="12"/>
+                                <Setter Property="VerticalAlignment" Value="Center"/>
+                                <Setter Property="Foreground" Value="#546E7A"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+
+                    <!-- Área -->
+                    <DataGridTextColumn Header="Área"
+                                        Binding="{Binding Reader.AreasIdArea}"
+                                        Width="100"/>
+
+                    <!-- Último intento -->
+                    <DataGridTemplateColumn Header="Último intento" Width="160" SortMemberPath="LastAttemptAt">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock FontFamily="Segoe UI"
+                                           FontSize="11"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center">
+                                    <TextBlock.Text>
+                                        <Binding Path="LastAttemptAt" StringFormat="{}{0:HH:mm:ss}"
+                                                 TargetNullValue="—"/>
+                                    </TextBlock.Text>
+                                </TextBlock>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Error -->
+                    <DataGridTemplateColumn Header="Detalle" Width="200">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding ErrorMessage, TargetNullValue='—'}"
+                                           FontFamily="Segoe UI"
+                                           FontSize="11"
+                                           Foreground="#EF5350"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding ErrorMessage}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <!-- ── ACTION BAR ─────────────────────────────────────── -->
+        <Border Grid.Row="2"
+                Background="{StaticResource SurfaceBrush}"
+                BorderBrush="{StaticResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="6"
+                Padding="16,10"
+                Margin="0,12,0,0"
+                Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="&#xE117;"
+                           FontFamily="Segoe MDL2 Assets"
+                           FontSize="13"
+                           Foreground="{StaticResource AccentBrush}"
+                           VerticalAlignment="Center"/>
+                <TextBlock Text="Operación en curso…"
+                           FontFamily="Segoe UI"
+                           FontSize="12"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           Margin="8,0,0,0"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+
+    </Grid>
+</UserControl>

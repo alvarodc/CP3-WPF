@@ -22,6 +22,12 @@ public partial class ShellViewModel : ObservableObject
     private string _readersStatus = "Conectando lectores...";
 
     [ObservableProperty]
+    private string _currentModuleTitle = "CardPass3";
+
+    [ObservableProperty]
+    private string _currentOperatorName = string.Empty;
+
+    [ObservableProperty]
     private object? _currentView;
 
     public ShellViewModel(IReaderConnectionService readerService, INavigationService navigation)
@@ -51,6 +57,22 @@ public partial class ShellViewModel : ObservableObject
     [RelayCommand]
     private void Navigate(string module)
     {
+        CurrentModuleTitle = module switch
+        {
+            "pass"    => "Control de paso",
+            "readers" => "Lectores",
+            "users"   => "Usuarios",
+            "events"  => "Fichajes",
+            "areas"   => "Áreas",
+            "config"  => "Configuración",
+            _         => "CardPass3"
+        };
         CurrentView = _navigation.Resolve(module);
     }
+
+    /// <summary>Raised when the user requests logout. ShellWindow subscribes and handles the window transition.</summary>
+    public event EventHandler? LogoutRequested;
+
+    [RelayCommand]
+    private void Logout() => LogoutRequested?.Invoke(this, EventArgs.Empty);
 }

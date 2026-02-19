@@ -112,7 +112,7 @@ public class EventRepository(IDatabaseConnectionFactory db) : IEventRepository
             new CommandDefinition(sql, parameters, cancellationToken: ct));
     }
 
-    public async Task InsertAsync(Event ev, CancellationToken ct = default)
+    public async Task InsertAsync(DbEvent ev, CancellationToken ct = default)
     {
         const string sql = @"
             INSERT INTO events (datetime_utc, datetime_local, users_id_user, incidence, readers_id_reader)

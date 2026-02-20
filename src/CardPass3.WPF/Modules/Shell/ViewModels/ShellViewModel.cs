@@ -3,56 +3,48 @@ using CardPass3.WPF.Services.Readers;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 
-namespace CardPass3.WPF.Modules.Shell.ViewModels
-{
+namespace CardPass3.WPF.Modules.Shell.ViewModels;
 
 public partial class ShellViewModel : ObservableObject
 {
     private readonly IReaderConnectionService _readerService;
-    private readonly INavigationService _navigation;
+    private readonly INavigationService       _navigation;
 
-    // Expose reader list directly from the service — no copy needed
-    public IReadOnlyList<ReaderConnectionInfo> Readers
-        => _readerService.Readers;
+    // ObservableCollection directa del servicio — WPF detecta Add/Remove automáticamente
+    public ObservableCollection<ReaderConnectionInfo> Readers => _readerService.Readers;
 
-    [ObservableProperty]
-    private bool _readersLoading;
-
-    [ObservableProperty]
-    private string _readersStatus = "Conectando lectores...";
-
-    [ObservableProperty]
-    private string _currentModuleTitle = "CardPass3";
-
-    [ObservableProperty]
-    private string _currentOperatorName = string.Empty;
-
-    [ObservableProperty]
-    private object? _currentView;
+    [ObservableProperty] private bool   _readersLoading;
+    [ObservableProperty] private string _readersStatus       = "Conectando lectores...";
+    [ObservableProperty] private string _currentModuleTitle  = "CardPass3";
+    [ObservableProperty] private string _currentOperatorName = string.Empty;
+    [ObservableProperty] private object? _currentView;
 
     public ShellViewModel(IReaderConnectionService readerService, INavigationService navigation)
     {
         _readerService = readerService;
-        _navigation = navigation;
+        _navigation    = navigation;
 
-        // Watch the connecting flag to update status bar
-        // ReaderConnectionService updates IsStarting while the initial sweep runs
-        MonitorReadersAsync();
+        // Actualizar contadores cuando la colección cambia (Add/Remove durante startup)
+        _readerService.Readers.CollectionChanged += OnReadersCollectionChanged;
+
+        // Actualizar contadores cuando cambia el estado de conexión de un lector
+        _readerService.ConnectionStateChanged += _ => UpdateReadersStatus();
+
+        MonitorStartupAsync();
     }
 
-    private async void MonitorReadersAsync()
+    private void OnReadersCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+        => UpdateReadersStatus();
+
+    private async void MonitorStartupAsync()
     {
         ReadersLoading = true;
-
         while (_readerService.IsStarting)
-            await Task.Delay(500);
-
+            await Task.Delay(300);
         UpdateReadersStatus();
         ReadersLoading = false;
-
-        // Actualizar el status en tiempo real cuando cambia el estado de un lector
-        _readerService.ConnectionStateChanged += _ => UpdateReadersStatus();
     }
 
     private void UpdateReadersStatus()
@@ -78,10 +70,8 @@ public partial class ShellViewModel : ObservableObject
         CurrentView = _navigation.Resolve(module);
     }
 
-    /// <summary>Raised when the user requests logout. ShellWindow subscribes and handles the window transition.</summary>
     public event EventHandler? LogoutRequested;
 
     [RelayCommand]
     private void Logout() => LogoutRequested?.Invoke(this, EventArgs.Empty);
-}
 }

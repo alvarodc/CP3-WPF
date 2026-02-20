@@ -1,6 +1,8 @@
 using CardPass3.WPF.Services.Readers;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 
 namespace CardPass3.WPF.Modules.Readers.ViewModels;
 
@@ -8,24 +10,27 @@ public partial class ReadersViewModel : ObservableObject
 {
     private readonly IReaderConnectionService _connectionService;
 
-    public IReadOnlyList<ReaderConnectionInfo> Readers => _connectionService.Readers;
+    // ObservableCollection directa — el DataGrid se refresca automáticamente
+    public ObservableCollection<ReaderConnectionInfo> Readers => _connectionService.Readers;
 
     public int ConnectedCount
         => _connectionService.Readers.Count(r => r.State == ReaderConnectionState.ReaderConnected);
     public int TotalCount
         => _connectionService.Readers.Count;
 
-    [ObservableProperty]
-    private ReaderConnectionInfo? _selectedReader;
-
-    [ObservableProperty]
-    private bool _isBusy;
+    [ObservableProperty] private ReaderConnectionInfo? _selectedReader;
+    [ObservableProperty] private bool _isBusy;
 
     public ReadersViewModel(IReaderConnectionService connectionService)
     {
         _connectionService = connectionService;
 
-        // Refrescar contadores cuando cambia el estado de cualquier lector
+        _connectionService.Readers.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(ConnectedCount));
+            OnPropertyChanged(nameof(TotalCount));
+        };
+
         _connectionService.ConnectionStateChanged += _ =>
         {
             OnPropertyChanged(nameof(ConnectedCount));
@@ -65,11 +70,8 @@ public partial class ReadersViewModel : ObservableObject
         _connectionService.Restart(SelectedReader.Reader.IdReader);
     }
 
-    [RelayCommand]
-    private void EmergencyOpen() => _connectionService.EmergencyOpen();
-
-    [RelayCommand]
-    private void EmergencyEnd() => _connectionService.EmergencyEnd();
+    [RelayCommand] private void EmergencyOpen() => _connectionService.EmergencyOpen();
+    [RelayCommand] private void EmergencyEnd()  => _connectionService.EmergencyEnd();
 
     private bool CanActOnReader()          => SelectedReader is not null && !IsBusy;
     private bool CanActOnConnectedReader() => SelectedReader?.IsOperational == true && !IsBusy;

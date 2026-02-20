@@ -1,5 +1,6 @@
 using CardPass3.WPF.Data.Models;
 using CardPass3.WPF.Services.Readers.Lmpi;
+using System.Collections.ObjectModel;
 
 namespace CardPass3.WPF.Services.Readers;
 
@@ -37,7 +38,7 @@ public sealed class ReaderConnectionInfo
 public interface IReaderConnectionService
 {
     /// <summary>Lista observable actualizada en el hilo de UI.</summary>
-    IReadOnlyList<ReaderConnectionInfo> Readers { get; }
+    ObservableCollection<ReaderConnectionInfo> Readers { get; }
 
     bool IsStarting { get; }
 

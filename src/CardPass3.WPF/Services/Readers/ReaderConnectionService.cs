@@ -23,7 +23,7 @@ public sealed class ReaderConnectionService : IReaderConnectionService, IAsyncDi
     private readonly ConcurrentDictionary<int, LmpiDriver> _drivers = new();
     private readonly ObservableCollection<ReaderConnectionInfo> _readers = new();
 
-    public IReadOnlyList<ReaderConnectionInfo> Readers => _readers;
+    public ObservableCollection<ReaderConnectionInfo> Readers => _readers;
     public bool IsStarting { get; private set; }
 
     private const int MaxParallelAtStartup = 10;

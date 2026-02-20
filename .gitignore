@@ -21,6 +21,3 @@ publish/
 ## OS
 .DS_Store
 Thumbs.db
-
-## Custom
-scripts/

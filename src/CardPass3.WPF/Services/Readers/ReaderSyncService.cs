@@ -5,14 +5,11 @@ using Microsoft.Extensions.Logging;
 namespace CardPass3.WPF.Services.Readers;
 
 /// <summary>
-/// Detecta cambios en la tabla readers realizados desde otros puestos de la instalación
+/// Detecta cambios en la tabla readers realizados desde otros puestos
 /// y aplica el diff al ReaderConnectionService local.
 ///
-/// Estrategia: polling periódico comparando el snapshot actual en memoria contra BD.
-/// Simple, sin dependencias externas, suficiente para el volumen de cambios esperado
-/// (altas/bajas/modificaciones de lectores son operaciones ocasionales).
-///
-/// Intervalo por defecto: 5 segundos.
+/// Nota: el sync no arranca hasta que ReaderConnectionService.StartAsync()
+/// haya terminado, evitando race conditions con la carga inicial.
 /// </summary>
 public sealed class ReaderSyncService : IAsyncDisposable
 {
@@ -20,9 +17,9 @@ public sealed class ReaderSyncService : IAsyncDisposable
     private readonly IReaderRepository          _readerRepo;
     private readonly ILogger<ReaderSyncService> _logger;
 
-    private readonly TimeSpan          _pollInterval;
-    private CancellationTokenSource?   _cts;
-    private Task?                      _loopTask;
+    private readonly TimeSpan        _pollInterval;
+    private CancellationTokenSource? _cts;
+    private Task?                    _loopTask;
 
     public ReaderSyncService(
         ReaderConnectionService    connectionService,
@@ -40,7 +37,8 @@ public sealed class ReaderSyncService : IAsyncDisposable
     {
         _cts      = new CancellationTokenSource();
         _loopTask = RunAsync(_cts.Token);
-        _logger.LogInformation("ReaderSyncService started (interval: {Interval}s)", _pollInterval.TotalSeconds);
+        _logger.LogInformation("ReaderSyncService started (interval: {Interval}s)",
+            _pollInterval.TotalSeconds);
     }
 
     public async Task StopAsync()
@@ -50,10 +48,21 @@ public sealed class ReaderSyncService : IAsyncDisposable
         if (_loopTask is not null)
             await _loopTask.ConfigureAwait(false);
         _cts.Dispose();
+        _cts = null;
     }
 
     private async Task RunAsync(CancellationToken ct)
     {
+        // Esperar a que la carga inicial de lectores termine antes de empezar a hacer diff.
+        // Sin esto, el sync ve 0 lectores en memoria y los añade todos como "Added",
+        // causando duplicados y el ArgumentException en ToDictionary.
+        while (_connectionService.IsStarting && !ct.IsCancellationRequested)
+            await Task.Delay(200, ct).ConfigureAwait(false);
+
+        if (ct.IsCancellationRequested) return;
+
+        _logger.LogDebug("ReaderSyncService: initial load complete, starting poll loop");
+
         using var timer = new PeriodicTimer(_pollInterval);
 
         while (!ct.IsCancellationRequested)
@@ -66,40 +75,35 @@ public sealed class ReaderSyncService : IAsyncDisposable
             catch (OperationCanceledException) { break; }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "ReaderSyncService error during poll");
-                // No re-throw — el loop continúa en el siguiente tick
+                _logger.LogWarning(ex, "ReaderSyncService: error during poll, continuing");
             }
         }
     }
 
     private async Task CheckAndApplyDiffAsync(CancellationToken ct)
     {
-        // Estado actual en memoria
+        // Snapshot en memoria — GroupBy + First por si hubiera duplicados residuales
         var current = _connectionService.Readers
-            .ToDictionary(r => r.Reader.IdReader, r => r.Reader);
+            .GroupBy(r => r.Reader.IdReader)
+            .ToDictionary(g => g.Key, g => g.First().Reader);
 
-        // Estado en BD (incluyendo soft-deleted para detectar bajas)
+        // Estado en BD (todos, para detectar soft-deletes)
         var dbReaders = (await _readerRepo.GetAllAsync(ct)).ToList();
-        var dbMap     = dbReaders
+        var dbMap = dbReaders
             .Where(r => !r.Deleted)
-            .ToDictionary(r => r.IdReader);
+            .GroupBy(r => r.IdReader)
+            .ToDictionary(g => g.Key, g => g.First());
 
         var diff = new ReaderSyncDiff();
 
-        // Detectar altas y modificaciones
         foreach (var (id, dbReader) in dbMap)
         {
             if (!current.TryGetValue(id, out var local))
-            {
                 diff.Added.Add(dbReader);
-            }
             else if (HasChanged(local, dbReader))
-            {
                 diff.Updated.Add(dbReader);
-            }
         }
 
-        // Detectar bajas (en memoria pero no en BD, o marcados como deleted)
         foreach (var id in current.Keys)
         {
             if (!dbMap.ContainsKey(id))
@@ -109,17 +113,13 @@ public sealed class ReaderSyncService : IAsyncDisposable
         if (diff.HasChanges)
         {
             _logger.LogInformation(
-                "[Sync] Changes detected — added: {A}, updated: {U}, removed: {R}",
+                "[Sync] Changes from another instance — added:{A} updated:{U} removed:{R}",
                 diff.Added.Count, diff.Updated.Count, diff.RemovedIds.Count);
 
             await _connectionService.ApplySyncDiffAsync(diff, ct);
         }
     }
 
-    /// <summary>
-    /// Compara los campos relevantes para determinar si hay que reconectar.
-    /// Cambios en descripción o área no requieren reconexión.
-    /// </summary>
     private static bool HasChanged(Reader local, Reader db)
         => local.IpAddress          != db.IpAddress
         || local.IpAddressEffective != db.IpAddressEffective

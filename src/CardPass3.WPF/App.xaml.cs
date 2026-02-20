@@ -13,85 +13,100 @@ using Microsoft.Extensions.Hosting;
 using Serilog;
 using System.Windows;
 
-namespace CardPass3.WPF
+namespace CardPass3.WPF;
+
+public partial class App : Application
 {
-    public partial class App : Application
+    private IHost? _host;
+
+    public static IServiceProvider Services => ((App)Current)._host!.Services;
+
+    protected override async void OnStartup(StartupEventArgs e)
     {
-        private IHost? _host;
+        base.OnStartup(e);
 
-        public static IServiceProvider Services => ((App)Current)._host!.Services;
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Debug()
+            .WriteTo.File("logs/cardpass3-.log",
+                rollingInterval: RollingInterval.Day,
+                retainedFileCountLimit: 30)
+            .CreateLogger();
 
-        protected override async void OnStartup(StartupEventArgs e)
+        _host = Host.CreateDefaultBuilder()
+            .UseSerilog()
+            .ConfigureServices(ConfigureServices)
+            .Build();
+
+        await _host.StartAsync();
+
+        // Generar config de BD en primer arranque
+        var dbConfig = _host.Services.GetRequiredService<IDatabaseConfigService>();
+        if (!dbConfig.Exists)
         {
-            base.OnStartup(e);
-
-            Log.Logger = new LoggerConfiguration()
-                .MinimumLevel.Debug()
-                .WriteTo.File("logs/cardpass3-.log",
-                    rollingInterval: RollingInterval.Day,
-                    retainedFileCountLimit: 30)
-                .CreateLogger();
-
-            _host = Host.CreateDefaultBuilder()
-                .UseSerilog()
-                .ConfigureServices(ConfigureServices)
-                .Build();
-
-            await _host.StartAsync();
-
-            // Si no existe el fichero de configuración de BD, generarlo con valores por defecto
-            // El usuario podrá modificarlos desde Configuración > Base de datos
-            var dbConfigService = _host.Services.GetRequiredService<IDatabaseConfigService>();
-            if (!dbConfigService.Exists)
-            {
-                dbConfigService.GenerateDefault();
-                Log.Information("Primer arranque: fichero de configuración de BD generado en ProgramData.");
-            }
-
-            var loginWindow = _host.Services.GetRequiredService<LoginWindow>();
-            loginWindow.Show();
+            dbConfig.GenerateDefault();
+            Log.Information("Primer arranque: config de BD generada en ProgramData.");
         }
 
-        private static void ConfigureServices(IServiceCollection services)
+        // Arrancar lectores en background (no bloquea la UI)
+        var readerService = _host.Services.GetRequiredService<IReaderConnectionService>();
+        _ = Task.Run(() => readerService.StartAsync());
+
+        // Arrancar sincronización multi-instancia
+        var syncService = _host.Services.GetRequiredService<ReaderSyncService>();
+        syncService.Start();
+
+        var loginWindow = _host.Services.GetRequiredService<LoginWindow>();
+        loginWindow.Show();
+    }
+
+    private static void ConfigureServices(IServiceCollection services)
+    {
+        // ── Database ──────────────────────────────────────────────────────────
+        services.AddSingleton<IDatabaseConfigService, DatabaseConfigService>();
+        services.AddSingleton<IDatabaseConnectionFactory, MySqlConnectionFactory>();
+
+        // ── Repositories ──────────────────────────────────────────────────────
+        services.AddSingleton<IOperatorRepository, OperatorRepository>();
+        services.AddSingleton<IReaderRepository, ReaderRepository>();
+        services.AddSingleton<IEventRepository, EventRepository>();
+        services.AddSingleton<IConfigurationRepository, ConfigurationRepository>();
+
+        // ── Reader services ───────────────────────────────────────────────────
+        // ReaderConnectionService se registra también como su tipo concreto
+        // para que ReaderSyncService pueda acceder a ApplySyncDiffAsync (internal)
+        services.AddSingleton<ReaderConnectionService>();
+        services.AddSingleton<IReaderConnectionService>(sp =>
+            sp.GetRequiredService<ReaderConnectionService>());
+        services.AddSingleton<ReaderSyncService>();
+
+        // ── Navigation ────────────────────────────────────────────────────────
+        services.AddSingleton<INavigationService, NavigationService>();
+
+        // ── ViewModels ────────────────────────────────────────────────────────
+        services.AddTransient<LoginViewModel>();
+        services.AddSingleton<ShellViewModel>();
+        services.AddSingleton<ReadersViewModel>();
+
+        // ── Views ─────────────────────────────────────────────────────────────
+        services.AddTransient<LoginWindow>();
+        services.AddSingleton<ShellWindow>();
+    }
+
+    protected override async void OnExit(ExitEventArgs e)
+    {
+        if (_host is not null)
         {
-            // ── Database config & connection ──────────────────────────────────
-            // DatabaseConfigService lee/escribe %ProgramData%\CardPass3\Database\cp3db.config.json
-            // Si el fichero no existe lo crea con valores por defecto.
-            services.AddSingleton<IDatabaseConfigService, DatabaseConfigService>();
-            services.AddSingleton<IDatabaseConnectionFactory, MySqlConnectionFactory>();
+            // Parar sync y desconectar lectores limpiamente
+            var syncService   = _host.Services.GetRequiredService<ReaderSyncService>();
+            var readerService = _host.Services.GetRequiredService<IReaderConnectionService>();
 
-            // ── Repositories ──────────────────────────────────────────────────
-            services.AddSingleton<IOperatorRepository, OperatorRepository>();
-            services.AddSingleton<IReaderRepository, ReaderRepository>();
-            services.AddSingleton<IEventRepository, EventRepository>();
-            services.AddSingleton<IConfigurationRepository, ConfigurationRepository>();
-
-            // ── Services ──────────────────────────────────────────────────────
-            services.AddSingleton<IReaderDriverFactory, DefaultReaderDriverFactory>();
-            services.AddSingleton<IReaderConnectionService, ReaderConnectionService>();
-            services.AddSingleton<INavigationService, NavigationService>();
-
-            // ── ViewModels ────────────────────────────────────────────────────
-            services.AddTransient<LoginViewModel>();
-            services.AddSingleton<ShellViewModel>();
-            services.AddSingleton<ReadersViewModel>();
-
-            // ── Views ─────────────────────────────────────────────────────────
-            services.AddTransient<LoginWindow>();
-            services.AddSingleton<ShellWindow>();
+            await syncService.StopAsync();
+            await readerService.StopAsync();
+            await _host.StopAsync();
+            _host.Dispose();
         }
 
-        protected override async void OnExit(ExitEventArgs e)
-        {
-            if (_host is not null)
-            {
-                var readerService = _host.Services.GetRequiredService<IReaderConnectionService>();
-                await readerService.DisconnectAllAsync();
-                await _host.StopAsync();
-                _host.Dispose();
-            }
-            Log.CloseAndFlush();
-            base.OnExit(e);
-        }
+        Log.CloseAndFlush();
+        base.OnExit(e);
     }
 }

@@ -1,101 +1,66 @@
 using CardPass3.WPF.Data.Models;
+using CardPass3.WPF.Services.Readers.Lmpi;
 
-namespace CardPass3.WPF.Services.Readers
+namespace CardPass3.WPF.Services.Readers;
+
+// ─── Connection state (UI-facing, maps from TcpState) ────────────────────────
+
+public enum ReaderConnectionState
 {
-
-/// <summary>
-/// Abstraction over the hardware TCP/IP communication library.
-/// Each driver type (LPFT3, etc.) implements this interface.
-/// This makes it possible to mock hardware in tests and to support multiple device families.
-/// </summary>
-public interface IReaderDriver
-{
-    int ReaderId { get; }
-    bool IsConnected { get; }
-
-    Task ConnectAsync(CancellationToken ct = default);
-    Task DisconnectAsync(CancellationToken ct = default);
-    Task<bool> PingAsync(CancellationToken ct = default);
-    Task OpenRelayAsync(int seconds, CancellationToken ct = default);
-    Task RestartAsync(CancellationToken ct = default);
-
-    // Events from device → software
-    event EventHandler<ReaderEventArgs>? EventReceived;
+    Idle,
+    Connecting,
+    TcpConnected,      // TCP OK pero lector aún no confirmado
+    ReaderConnected,   // Operativo al 100%
+    Failed,
+    Disconnected
 }
 
-public class ReaderEventArgs(int readerId, string cardNumber, string incidence) : EventArgs
+// ─── Runtime info per reader (bound to UI grid) ──────────────────────────────
+
+public sealed class ReaderConnectionInfo
 {
-    public int ReaderId { get; } = readerId;
-    public string CardNumber { get; } = cardNumber;
-    public string Incidence { get; } = incidence;
-    public DateTime ReceivedAt { get; } = DateTime.UtcNow;
+    public required Reader Reader         { get; set; }
+    public ReaderConnectionState State    { get; set; } = ReaderConnectionState.Idle;
+    public AppState    AppState           { get; set; } = AppState.Control;
+    public ReaderState ReaderState        { get; set; } = ReaderState.Control;
+    public string?     ErrorMessage       { get; set; }
+    public DateTime?   ConnectedAt        { get; set; }
+    public DateTime?   LastAttemptAt      { get; set; }
+
+    public bool IsOperational => State == ReaderConnectionState.ReaderConnected;
+    public bool IsEmergency   => AppState  == AppState.Emergency
+                              || ReaderState == ReaderState.Emergency;
 }
 
-/// <summary>
-/// Factory that returns the correct driver implementation based on Reader.Driver field.
-/// The existing TCP/IP library is wrapped here — centralising all hardware coupling.
-/// </summary>
-public interface IReaderDriverFactory
+// ─── Service interface ────────────────────────────────────────────────────────
+
+public interface IReaderConnectionService
 {
-    IReaderDriver GetDriver(Reader reader);
-}
+    /// <summary>Lista observable actualizada en el hilo de UI.</summary>
+    IReadOnlyList<ReaderConnectionInfo> Readers { get; }
 
-// ─── Placeholder implementation (replace with actual library calls) ──────────
+    bool IsStarting { get; }
 
-public class DefaultReaderDriverFactory : IReaderDriverFactory
-{
-    private readonly Dictionary<int, IReaderDriver> _cache = new();
+    // Ciclo de vida
+    Task StartAsync(CancellationToken ct = default);
+    Task StopAsync(CancellationToken ct = default);
 
-    public IReaderDriver GetDriver(Reader reader)
-    {
-        if (!_cache.TryGetValue(reader.IdReader, out var driver))
-        {
-            // TODO: instantiate the correct driver class based on reader.Driver enum value
-            // e.g. driver = reader.Driver == 0 ? new Lpft3Driver(reader) : new OtherDriver(reader);
-            driver = new StubReaderDriver(reader);
-            _cache[reader.IdReader] = driver;
-        }
-        return driver;
-    }
-}
+    // Operaciones individuales
+    Task ConnectAsync(int readerId, CancellationToken ct = default);
+    Task DisconnectAsync(int readerId, CancellationToken ct = default);
 
-/// <summary>
-/// Stub driver for development / testing without physical hardware.
-/// Simulates a successful connection with a short delay.
-/// </summary>
-internal class StubReaderDriver(Reader reader) : IReaderDriver
-{
-    public int ReaderId => reader.IdReader;
-    public bool IsConnected { get; private set; }
+    // Comandos al lector
+    void OpenRelay(int readerId);
+    void Restart(int readerId);
+    void EmergencyOpen();
+    void EmergencyEnd();
 
-    public event EventHandler<ReaderEventArgs>? EventReceived;
+    // CRUD — los cambios se detectan y propagan a otros puestos vía sync periódico
+    Task<ReaderConnectionInfo> AddReaderAsync(Reader reader, CancellationToken ct = default);
+    Task UpdateReaderAsync(Reader reader, CancellationToken ct = default);
+    Task RemoveReaderAsync(int readerId, CancellationToken ct = default);
 
-    public async Task ConnectAsync(CancellationToken ct = default)
-    {
-        // Simulate variable network latency
-        var delay = Random.Shared.Next(200, 2000);
-        await Task.Delay(delay, ct);
-
-        // Simulate ~80% success rate
-        if (Random.Shared.NextDouble() < 0.2)
-            throw new TimeoutException($"Stub: connection timeout for {reader.EffectiveIp}:{reader.Port}");
-
-        IsConnected = true;
-    }
-
-    public Task DisconnectAsync(CancellationToken ct = default)
-    {
-        IsConnected = false;
-        return Task.CompletedTask;
-    }
-
-    public Task<bool> PingAsync(CancellationToken ct = default)
-        => Task.FromResult(IsConnected);
-
-    public Task OpenRelayAsync(int seconds, CancellationToken ct = default)
-        => Task.CompletedTask;
-
-    public Task RestartAsync(CancellationToken ct = default)
-        => Task.CompletedTask;
-}
+    // Eventos hacia el resto del sistema (fichajes, estados, etc.)
+    event Action<ReaderConnectionInfo, LmpiEvent> EventReceived;
+    event Action<ReaderConnectionInfo>             ConnectionStateChanged;
 }

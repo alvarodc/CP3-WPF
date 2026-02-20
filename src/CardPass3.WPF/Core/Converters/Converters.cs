@@ -11,11 +11,13 @@ namespace CardPass3.WPF.Core.Converters
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
             => (ReaderConnectionState)value switch
             {
-                ReaderConnectionState.Connected    => "Conectado",
-                ReaderConnectionState.Connecting   => "Conectando…",
-                ReaderConnectionState.Failed       => "Error",
-                ReaderConnectionState.Disconnected => "Desconectado",
-                _                                  => "Inactivo"
+                ReaderConnectionState.Idle            => "Inactivo",
+                ReaderConnectionState.Connecting      => "Conectando…",
+                ReaderConnectionState.TcpConnected    => "TCP OK",
+                ReaderConnectionState.ReaderConnected => "Conectado",
+                ReaderConnectionState.Failed          => "Error",
+                ReaderConnectionState.Disconnected    => "Desconectado",
+                _                                     => "Desconocido"
             };
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
             => throw new NotSupportedException();
@@ -23,18 +25,20 @@ namespace CardPass3.WPF.Core.Converters
 
     public class ReaderStateToBrushConverter : IValueConverter
     {
-        private static readonly SolidColorBrush Connected  = new(Color.FromRgb(0x43, 0xA0, 0x47));
-        private static readonly SolidColorBrush Connecting = new(Color.FromRgb(0xF5, 0x7C, 0x00));
-        private static readonly SolidColorBrush Failed     = new(Color.FromRgb(0xC6, 0x28, 0x28));
-        private static readonly SolidColorBrush Idle       = new(Color.FromRgb(0x9E, 0x9E, 0x9E));
+        private static readonly SolidColorBrush ReaderOk   = new(Color.FromRgb(0x43, 0xA0, 0x47)); // verde
+        private static readonly SolidColorBrush TcpOk      = new(Color.FromRgb(0x02, 0x88, 0xD1)); // azul
+        private static readonly SolidColorBrush Connecting = new(Color.FromRgb(0xF5, 0x7C, 0x00)); // naranja
+        private static readonly SolidColorBrush Failed     = new(Color.FromRgb(0xC6, 0x28, 0x28)); // rojo
+        private static readonly SolidColorBrush Idle       = new(Color.FromRgb(0x9E, 0x9E, 0x9E)); // gris
 
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
             => (ReaderConnectionState)value switch
             {
-                ReaderConnectionState.Connected  => Connected,
-                ReaderConnectionState.Connecting => Connecting,
-                ReaderConnectionState.Failed     => Failed,
-                _                                => Idle
+                ReaderConnectionState.ReaderConnected => ReaderOk,
+                ReaderConnectionState.TcpConnected    => TcpOk,
+                ReaderConnectionState.Connecting      => Connecting,
+                ReaderConnectionState.Failed          => Failed,
+                _                                     => Idle
             };
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
             => throw new NotSupportedException();

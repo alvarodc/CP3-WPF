@@ -7,7 +7,6 @@
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Shared/Styles/Colors.xaml"/>
                 <ResourceDictionary Source="Shared/Styles/Controls.xaml"/>
-                <ResourceDictionary Source="Shared/Styles/Typography.xaml"/>
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

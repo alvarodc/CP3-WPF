@@ -1,23 +1,19 @@
-using CardPass3.WPF.Data.Models;
-using CardPass3.WPF.Data.Repositories.Interfaces;
 using CardPass3.WPF.Services.Readers;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using System.Collections.ObjectModel;
 
-namespace CardPass3.WPF.Modules.Readers.ViewModels
-{
+namespace CardPass3.WPF.Modules.Readers.ViewModels;
 
 public partial class ReadersViewModel : ObservableObject
 {
     private readonly IReaderConnectionService _connectionService;
-    private readonly IReaderRepository _readerRepo;
 
-    public ReadOnlyObservableCollection<ReaderConnectionInfo> Readers
-        => _connectionService.Readers;
+    public IReadOnlyList<ReaderConnectionInfo> Readers => _connectionService.Readers;
 
-    public int ConnectedCount => Readers.Count(r => r.State == ReaderConnectionState.Connected);
-    public int TotalCount     => Readers.Count;
+    public int ConnectedCount
+        => _connectionService.Readers.Count(r => r.State == ReaderConnectionState.ReaderConnected);
+    public int TotalCount
+        => _connectionService.Readers.Count;
 
     [ObservableProperty]
     private ReaderConnectionInfo? _selectedReader;
@@ -25,10 +21,16 @@ public partial class ReadersViewModel : ObservableObject
     [ObservableProperty]
     private bool _isBusy;
 
-    public ReadersViewModel(IReaderConnectionService connectionService, IReaderRepository readerRepo)
+    public ReadersViewModel(IReaderConnectionService connectionService)
     {
         _connectionService = connectionService;
-        _readerRepo = readerRepo;
+
+        // Refrescar contadores cuando cambia el estado de cualquier lector
+        _connectionService.ConnectionStateChanged += _ =>
+        {
+            OnPropertyChanged(nameof(ConnectedCount));
+            OnPropertyChanged(nameof(TotalCount));
+        };
     }
 
     [RelayCommand(CanExecute = nameof(CanActOnReader))]
@@ -36,7 +38,7 @@ public partial class ReadersViewModel : ObservableObject
     {
         if (SelectedReader is null) return;
         IsBusy = true;
-        try { await _connectionService.ConnectReaderAsync(SelectedReader.Reader.IdReader); }
+        try   { await _connectionService.ConnectAsync(SelectedReader.Reader.IdReader); }
         finally { IsBusy = false; }
     }
 
@@ -45,19 +47,30 @@ public partial class ReadersViewModel : ObservableObject
     {
         if (SelectedReader is null) return;
         IsBusy = true;
-        try { await _connectionService.DisconnectReaderAsync(SelectedReader.Reader.IdReader); }
+        try   { await _connectionService.DisconnectAsync(SelectedReader.Reader.IdReader); }
         finally { IsBusy = false; }
     }
 
-    [RelayCommand(CanExecute = nameof(CanActOnReader))]
-    private async Task OpenRelayAsync()
+    [RelayCommand(CanExecute = nameof(CanActOnConnectedReader))]
+    private void OpenRelay()
     {
         if (SelectedReader is null) return;
-        // Driver call goes through connection service / driver factory
-        // TODO: expose OpenRelay on IReaderConnectionService or resolve driver directly
-        await Task.CompletedTask;
+        _connectionService.OpenRelay(SelectedReader.Reader.IdReader);
     }
 
-    private bool CanActOnReader() => SelectedReader is not null && !IsBusy;
-}
+    [RelayCommand(CanExecute = nameof(CanActOnConnectedReader))]
+    private void RestartReader()
+    {
+        if (SelectedReader is null) return;
+        _connectionService.Restart(SelectedReader.Reader.IdReader);
+    }
+
+    [RelayCommand]
+    private void EmergencyOpen() => _connectionService.EmergencyOpen();
+
+    [RelayCommand]
+    private void EmergencyEnd() => _connectionService.EmergencyEnd();
+
+    private bool CanActOnReader()          => SelectedReader is not null && !IsBusy;
+    private bool CanActOnConnectedReader() => SelectedReader?.IsOperational == true && !IsBusy;
 }

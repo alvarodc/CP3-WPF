@@ -1,221 +1,288 @@
 using CardPass3.WPF.Data.Models;
 using CardPass3.WPF.Data.Repositories.Interfaces;
+using CardPass3.WPF.Services.Readers.Lmpi;
 using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
+using System.Windows;
 
-namespace CardPass3.WPF.Services.Readers
+namespace CardPass3.WPF.Services.Readers;
+
+/// <summary>
+/// Orquestador central de conexiones a lectores.
+/// Gestiona el ciclo de vida de todos los LmpiDriver, mantiene el estado
+/// observable para la UI y enruta eventos hardware al resto del sistema.
+/// </summary>
+public sealed class ReaderConnectionService : IReaderConnectionService, IAsyncDisposable
 {
-
-// ─── Connection state ────────────────────────────────────────────────────────
-
-public enum ReaderConnectionState
-{
-    Idle,
-    Connecting,
-    Connected,
-    Failed,
-    Disconnected
-}
-
-public class ReaderConnectionInfo
-{
-    public Reader Reader { get; init; } = null!;
-    public ReaderConnectionState State { get; set; } = ReaderConnectionState.Idle;
-    public string? ErrorMessage { get; set; }
-    public DateTime? ConnectedAt { get; set; }
-    public DateTime? LastAttemptAt { get; set; }
-
-    /// <summary>Convenience: controls that depend on this reader should be enabled only when Connected.</summary>
-    public bool IsOperational => State == ReaderConnectionState.Connected;
-}
-
-// ─── Service interface ───────────────────────────────────────────────────────
-
-public interface IReaderConnectionService
-{
-    /// <summary>Observable collection updated on the UI thread as connections resolve.</summary>
-    ReadOnlyObservableCollection<ReaderConnectionInfo> Readers { get; }
-
-    /// <summary>True while initial connection sweep is still in progress.</summary>
-    bool IsConnecting { get; }
-
-    /// <summary>
-    /// Starts connecting all enabled readers in parallel (fire-and-forget from startup).
-    /// Progress is reflected via the Readers collection.
-    /// </summary>
-    Task StartAsync(CancellationToken ct = default);
-
-    Task ConnectReaderAsync(int readerId, CancellationToken ct = default);
-    Task DisconnectReaderAsync(int readerId, CancellationToken ct = default);
-    Task DisconnectAllAsync(CancellationToken ct = default);
-
-    ReaderConnectionInfo? GetInfo(int readerId);
-}
-
-// ─── Service implementation ──────────────────────────────────────────────────
-
-public class ReaderConnectionService : IReaderConnectionService
-{
-    private readonly IReaderRepository _readerRepo;
-    private readonly IReaderDriverFactory _driverFactory;
+    private readonly IReaderRepository                _readerRepo;
+    private readonly IConfigurationRepository         _configRepo;
     private readonly ILogger<ReaderConnectionService> _logger;
+    private readonly ILoggerFactory                   _loggerFactory;
 
-    // Concurrent dictionary: readerId → connection info
-    private readonly ConcurrentDictionary<int, ReaderConnectionInfo> _infoMap = new();
-
-    // Backing collection (updated on UI thread via dispatcher)
+    private readonly ConcurrentDictionary<int, LmpiDriver> _drivers = new();
     private readonly ObservableCollection<ReaderConnectionInfo> _readers = new();
-    public ReadOnlyObservableCollection<ReaderConnectionInfo> Readers { get; }
 
-    public bool IsConnecting { get; private set; }
+    public IReadOnlyList<ReaderConnectionInfo> Readers => _readers;
+    public bool IsStarting { get; private set; }
 
-    // Max simultaneous TCP connection attempts (prevent SYN storm with 100+ readers)
-    private const int MaxParallelConnections = 10;
+    private const int MaxParallelAtStartup = 10;
+
+    public event Action<ReaderConnectionInfo, LmpiEvent> EventReceived          = delegate { };
+    public event Action<ReaderConnectionInfo>             ConnectionStateChanged = delegate { };
 
     public ReaderConnectionService(
-        IReaderRepository readerRepo,
-        IReaderDriverFactory driverFactory,
-        ILogger<ReaderConnectionService> logger)
+        IReaderRepository        readerRepo,
+        IConfigurationRepository configRepo,
+        ILoggerFactory           loggerFactory)
     {
-        _readerRepo = readerRepo;
-        _driverFactory = driverFactory;
-        _logger = logger;
-        Readers = new ReadOnlyObservableCollection<ReaderConnectionInfo>(_readers);
+        _readerRepo    = readerRepo;
+        _configRepo    = configRepo;
+        _loggerFactory = loggerFactory;
+        _logger        = loggerFactory.CreateLogger<ReaderConnectionService>();
     }
+
+    // ── Ciclo de vida ─────────────────────────────────────────────────────────
 
     public async Task StartAsync(CancellationToken ct = default)
     {
-        IsConnecting = true;
-
+        IsStarting = true;
         try
         {
-            var enabledReaders = (await _readerRepo.GetAllEnabledAsync(ct)).ToList();
-            _logger.LogInformation("Starting connection to {Count} enabled readers.", enabledReaders.Count);
+            var readers = (await _readerRepo.GetAllEnabledAsync(ct)).ToList();
+            _logger.LogInformation("Starting connections for {Count} enabled readers", readers.Count);
 
-            // Pre-populate the collection in Idle state so UI can show all readers immediately
-            foreach (var reader in enabledReaders)
-            {
-                var info = new ReaderConnectionInfo { Reader = reader, State = ReaderConnectionState.Idle };
-                _infoMap[reader.IdReader] = info;
-                App.Current.Dispatcher.Invoke(() => _readers.Add(info));
-            }
+            foreach (var reader in readers)
+                OnUiThread(() => _readers.Add(CreateInfo(reader)));
 
-            // Connect in parallel, respecting the semaphore limit
-            using var semaphore = new SemaphoreSlim(MaxParallelConnections, MaxParallelConnections);
-
-            var tasks = enabledReaders.Select(reader => Task.Run(async () =>
+            using var semaphore = new SemaphoreSlim(MaxParallelAtStartup);
+            var tasks = readers.Select(r => Task.Run(async () =>
             {
                 await semaphore.WaitAsync(ct);
-                try
-                {
-                    await ConnectReaderCoreAsync(_infoMap[reader.IdReader], ct);
-                }
-                finally
-                {
-                    semaphore.Release();
-                }
+                try   { await StartDriverAsync(r, ct); }
+                finally { semaphore.Release(); }
             }, ct));
 
             await Task.WhenAll(tasks);
 
-            _logger.LogInformation(
-                "Reader connection sweep complete. Connected: {C}, Failed: {F}",
-                _infoMap.Values.Count(i => i.State == ReaderConnectionState.Connected),
-                _infoMap.Values.Count(i => i.State == ReaderConnectionState.Failed));
+            _logger.LogInformation("Startup complete — connected: {C}/{T}",
+                _drivers.Values.Count(d => d.IsReaderConnected), _drivers.Count);
         }
-        finally
-        {
-            IsConnecting = false;
-        }
+        finally { IsStarting = false; }
     }
 
-    public async Task ConnectReaderAsync(int readerId, CancellationToken ct = default)
+    public async Task StopAsync(CancellationToken ct = default)
     {
-        if (!_infoMap.TryGetValue(readerId, out var info))
-        {
-            var reader = await _readerRepo.GetByIdAsync(readerId, ct)
-                ?? throw new InvalidOperationException($"Reader {readerId} not found.");
-            info = new ReaderConnectionInfo { Reader = reader };
-            _infoMap[readerId] = info;
-            App.Current.Dispatcher.Invoke(() => _readers.Add(info));
-        }
-
-        await ConnectReaderCoreAsync(info, ct);
+        _logger.LogInformation("Stopping all reader connections");
+        await Task.WhenAll(_drivers.Values.Select(d => d.DisposeAsync().AsTask()));
+        _drivers.Clear();
+        OnUiThread(_readers.Clear);
     }
 
-    public async Task DisconnectReaderAsync(int readerId, CancellationToken ct = default)
+    // ── Operaciones individuales ──────────────────────────────────────────────
+
+    public async Task ConnectAsync(int readerId, CancellationToken ct = default)
     {
-        if (!_infoMap.TryGetValue(readerId, out var info)) return;
+        if (_drivers.TryRemove(readerId, out var old)) await old.DisposeAsync();
 
-        try
-        {
-            var driver = _driverFactory.GetDriver(info.Reader);
-            await driver.DisconnectAsync(ct);
-            UpdateState(info, ReaderConnectionState.Disconnected);
-            _logger.LogInformation("Reader {Id} ({Desc}) disconnected.", readerId, info.Reader.ReaderDescription);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Error disconnecting reader {Id}.", readerId);
-        }
+        var reader = await _readerRepo.GetByIdAsync(readerId, ct)
+            ?? throw new InvalidOperationException($"Reader {readerId} not found.");
+
+        if (!_readers.Any(r => r.Reader.IdReader == readerId))
+            OnUiThread(() => _readers.Add(CreateInfo(reader)));
+
+        await StartDriverAsync(reader, ct);
     }
 
-    public async Task DisconnectAllAsync(CancellationToken ct = default)
+    public async Task DisconnectAsync(int readerId, CancellationToken ct = default)
     {
-        var tasks = _infoMap.Keys.Select(id => DisconnectReaderAsync(id, ct));
-        await Task.WhenAll(tasks);
+        if (!_drivers.TryRemove(readerId, out var driver)) return;
+        await driver.DisposeAsync();
+        UpdateInfo(readerId, info => { info.State = ReaderConnectionState.Disconnected; info.ErrorMessage = null; });
     }
 
-    public ReaderConnectionInfo? GetInfo(int readerId)
-        => _infoMap.TryGetValue(readerId, out var info) ? info : null;
+    // ── Comandos al lector ────────────────────────────────────────────────────
 
-    // ─── Private ─────────────────────────────────────────────────────────────
+    public void OpenRelay(int readerId)  { if (_drivers.TryGetValue(readerId, out var d)) d.OpenOnce(); }
+    public void Restart(int readerId)    { if (_drivers.TryGetValue(readerId, out var d)) d.Restart(); }
+    public void EmergencyOpen()          { foreach (var d in _drivers.Values) d.Emergency(); }
+    public void EmergencyEnd()           { foreach (var d in _drivers.Values) d.EmergencyEnd(); }
 
-    private async Task ConnectReaderCoreAsync(ReaderConnectionInfo info, CancellationToken ct)
+    // ── CRUD ──────────────────────────────────────────────────────────────────
+
+    public async Task<ReaderConnectionInfo> AddReaderAsync(Reader reader, CancellationToken ct = default)
     {
-        UpdateState(info, ReaderConnectionState.Connecting);
-        info.LastAttemptAt = DateTime.UtcNow;
-
-        try
-        {
-            var driver = _driverFactory.GetDriver(info.Reader);
-            await driver.ConnectAsync(ct);
-
-            info.ConnectedAt = DateTime.UtcNow;
-            info.ErrorMessage = null;
-            UpdateState(info, ReaderConnectionState.Connected);
-
-            _logger.LogInformation(
-                "Reader {Id} ({Desc}) connected at {Ip}:{Port}.",
-                info.Reader.IdReader,
-                info.Reader.ReaderDescription,
-                info.Reader.EffectiveIp,
-                info.Reader.Port);
-        }
-        catch (OperationCanceledException)
-        {
-            UpdateState(info, ReaderConnectionState.Failed);
-            info.ErrorMessage = "Connection cancelled.";
-        }
-        catch (Exception ex)
-        {
-            UpdateState(info, ReaderConnectionState.Failed);
-            info.ErrorMessage = ex.Message;
-
-            _logger.LogWarning(
-                "Reader {Id} ({Ip}:{Port}) connection failed: {Error}",
-                info.Reader.IdReader,
-                info.Reader.EffectiveIp,
-                info.Reader.Port,
-                ex.Message);
-        }
+        await _readerRepo.InsertAsync(reader, ct);
+        var info = CreateInfo(reader);
+        OnUiThread(() => _readers.Add(info));
+        if (reader.Enabled) await StartDriverAsync(reader, ct);
+        return info;
     }
 
-    /// <summary>Updates state on the UI thread so bound UI refreshes automatically.</summary>
-    private static void UpdateState(ReaderConnectionInfo info, ReaderConnectionState state)
+    public async Task UpdateReaderAsync(Reader reader, CancellationToken ct = default)
     {
-        App.Current.Dispatcher.Invoke(() => info.State = state);
+        await _readerRepo.UpdateAsync(reader, ct);
+        if (_drivers.TryRemove(reader.IdReader, out var old)) await old.DisposeAsync();
+        UpdateInfo(reader.IdReader, info => info.Reader = reader);
+        if (reader.Enabled) await StartDriverAsync(reader, ct);
     }
+
+    public async Task RemoveReaderAsync(int readerId, CancellationToken ct = default)
+    {
+        if (_drivers.TryRemove(readerId, out var driver)) await driver.DisposeAsync();
+        await _readerRepo.SoftDeleteAsync(readerId, ct);
+        OnUiThread(() =>
+        {
+            var item = _readers.FirstOrDefault(r => r.Reader.IdReader == readerId);
+            if (item is not null) _readers.Remove(item);
+        });
+    }
+
+    // ── Multi-instancia (llamado por ReaderSyncService) ───────────────────────
+
+    internal async Task ApplySyncDiffAsync(ReaderSyncDiff diff, CancellationToken ct)
+    {
+        foreach (var reader in diff.Added)
+        {
+            _logger.LogInformation("[Sync] Reader {Id} added from another instance", reader.IdReader);
+            OnUiThread(() => _readers.Add(CreateInfo(reader)));
+            if (reader.Enabled) await StartDriverAsync(reader, ct);
+        }
+
+        foreach (var reader in diff.Updated)
+        {
+            _logger.LogInformation("[Sync] Reader {Id} updated from another instance", reader.IdReader);
+            if (_drivers.TryRemove(reader.IdReader, out var old)) await old.DisposeAsync();
+            UpdateInfo(reader.IdReader, info => info.Reader = reader);
+            if (reader.Enabled) await StartDriverAsync(reader, ct);
+        }
+
+        foreach (var id in diff.RemovedIds)
+        {
+            _logger.LogInformation("[Sync] Reader {Id} removed from another instance", id);
+            if (_drivers.TryRemove(id, out var driver)) await driver.DisposeAsync();
+            OnUiThread(() =>
+            {
+                var item = _readers.FirstOrDefault(r => r.Reader.IdReader == id);
+                if (item is not null) _readers.Remove(item);
+            });
+        }
+    }
+
+    // ── Internals ─────────────────────────────────────────────────────────────
+
+    private async Task StartDriverAsync(Reader reader, CancellationToken ct)
+    {
+        var retryInterval = await GetRetryIntervalAsync(ct);
+        var ip            = await GetEffectiveIpAsync(reader, ct);
+
+        var driver = new LmpiDriver(ip, reader.Port, reader.UniqueName,
+            retryInterval, _loggerFactory.CreateLogger<LmpiDriver>());
+
+        driver.ConnectionStateChanged += (d, state)  => OnDriverStateChanged(reader.IdReader, state);
+        driver.EventReceived          += (d, ev)      => OnDriverEvent(reader.IdReader, ev);
+        driver.AppStateChanged        += (d, state)   => OnDriverAppState(reader.IdReader, state);
+        driver.ReaderStateChanged     += (d, state)   => OnDriverReaderState(reader.IdReader, state);
+
+        _drivers[reader.IdReader] = driver;
+
+        UpdateInfo(reader.IdReader, info =>
+        {
+            info.State         = ReaderConnectionState.Connecting;
+            info.LastAttemptAt = DateTime.UtcNow;
+            info.ErrorMessage  = null;
+        });
+
+        driver.StartConnect();
+    }
+
+    private void OnDriverStateChanged(int readerId, TcpState tcpState)
+    {
+        var mapped = tcpState switch
+        {
+            TcpState.Disconnected    => ReaderConnectionState.Disconnected,
+            TcpState.Connecting      => ReaderConnectionState.Connecting,
+            TcpState.TcpConnected    => ReaderConnectionState.TcpConnected,
+            TcpState.ReaderConnected => ReaderConnectionState.ReaderConnected,
+            TcpState.Disconnecting   => ReaderConnectionState.Disconnected,
+            _                        => ReaderConnectionState.Failed
+        };
+
+        UpdateInfo(readerId, info =>
+        {
+            info.State = mapped;
+            if (mapped == ReaderConnectionState.ReaderConnected)
+            { info.ConnectedAt = DateTime.UtcNow; info.ErrorMessage = null; }
+        });
+
+        var info = _readers.FirstOrDefault(r => r.Reader.IdReader == readerId);
+        if (info is not null) SafeRaise(() => ConnectionStateChanged(info));
+    }
+
+    private void OnDriverEvent(int readerId, LmpiEvent ev)
+    {
+        var info = _readers.FirstOrDefault(r => r.Reader.IdReader == readerId);
+        if (info is not null) SafeRaise(() => EventReceived(info, ev));
+    }
+
+    private void OnDriverAppState(int readerId, AppState state)
+    {
+        UpdateInfo(readerId, info => info.AppState = state);
+        var info = _readers.FirstOrDefault(r => r.Reader.IdReader == readerId);
+        if (info is not null) SafeRaise(() => ConnectionStateChanged(info));
+    }
+
+    private void OnDriverReaderState(int readerId, ReaderState state)
+    {
+        UpdateInfo(readerId, info => info.ReaderState = state);
+        var info = _readers.FirstOrDefault(r => r.Reader.IdReader == readerId);
+        if (info is not null) SafeRaise(() => ConnectionStateChanged(info));
+    }
+
+    private async Task<TimeSpan> GetRetryIntervalAsync(CancellationToken ct)
+    {
+        var raw = await _configRepo.GetValueAsync("connectionRetriesIntervalSeconds", ct);
+        return int.TryParse(raw, out var s) && s > 0 ? TimeSpan.FromSeconds(s) : TimeSpan.FromSeconds(30);
+    }
+
+    private async Task<string> GetEffectiveIpAsync(Reader reader, CancellationToken ct)
+    {
+        var flag = await _configRepo.GetValueAsync("use_ip_address_effective", ct);
+        return flag == "1" && !string.IsNullOrWhiteSpace(reader.IpAddressEffective)
+            ? reader.IpAddressEffective : reader.IpAddress;
+    }
+
+    private static ReaderConnectionInfo CreateInfo(Reader reader) =>
+        new() { Reader = reader, State = ReaderConnectionState.Idle };
+
+    private void UpdateInfo(int readerId, Action<ReaderConnectionInfo> update)
+        => OnUiThread(() =>
+        {
+            var info = _readers.FirstOrDefault(r => r.Reader.IdReader == readerId);
+            if (info is not null) update(info);
+        });
+
+    private static void OnUiThread(Action action)
+    {
+        if (Application.Current?.Dispatcher is { } d) d.Invoke(action);
+        else action();
+    }
+
+    private void SafeRaise(Action action)
+    {
+        try { action(); }
+        catch (Exception ex) { _logger.LogError(ex, "Error in reader event handler"); }
+    }
+
+    public async ValueTask DisposeAsync() => await StopAsync();
 }
+
+// ─── Diff para sincronización multi-instancia ─────────────────────────────────
+
+internal sealed class ReaderSyncDiff
+{
+    public List<Reader> Added      { get; init; } = [];
+    public List<Reader> Updated    { get; init; } = [];
+    public List<int>    RemovedIds { get; init; } = [];
+    public bool HasChanges => Added.Count > 0 || Updated.Count > 0 || RemovedIds.Count > 0;
 }

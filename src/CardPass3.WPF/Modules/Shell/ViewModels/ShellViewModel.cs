@@ -13,7 +13,7 @@ public partial class ShellViewModel : ObservableObject
     private readonly INavigationService _navigation;
 
     // Expose reader list directly from the service — no copy needed
-    public ReadOnlyObservableCollection<ReaderConnectionInfo> Readers
+    public IReadOnlyList<ReaderConnectionInfo> Readers
         => _readerService.Readers;
 
     [ObservableProperty]
@@ -37,7 +37,7 @@ public partial class ShellViewModel : ObservableObject
         _navigation = navigation;
 
         // Watch the connecting flag to update status bar
-        // ReaderConnectionService updates IsConnecting when sweep finishes
+        // ReaderConnectionService updates IsStarting while the initial sweep runs
         MonitorReadersAsync();
     }
 
@@ -45,14 +45,21 @@ public partial class ShellViewModel : ObservableObject
     {
         ReadersLoading = true;
 
-        // Poll until sweep completes (simple approach; can be replaced with event/Task)
-        while (_readerService.IsConnecting)
+        while (_readerService.IsStarting)
             await Task.Delay(500);
 
-        var connected = Readers.Count(r => r.State == ReaderConnectionState.Connected);
-        var total = Readers.Count;
-        ReadersStatus = $"Lectores: {connected}/{total} conectados";
+        UpdateReadersStatus();
         ReadersLoading = false;
+
+        // Actualizar el status en tiempo real cuando cambia el estado de un lector
+        _readerService.ConnectionStateChanged += _ => UpdateReadersStatus();
+    }
+
+    private void UpdateReadersStatus()
+    {
+        var connected = _readerService.Readers.Count(r => r.State == ReaderConnectionState.ReaderConnected);
+        var total     = _readerService.Readers.Count;
+        ReadersStatus = $"Lectores: {connected}/{total} conectados";
     }
 
     [RelayCommand]

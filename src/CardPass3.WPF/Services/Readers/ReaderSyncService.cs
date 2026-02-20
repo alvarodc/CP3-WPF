@@ -74,15 +74,22 @@ public sealed class ReaderSyncService : IAsyncDisposable
 
     private async Task CheckAndApplyDiffAsync(CancellationToken ct)
     {
-        // Estado actual en memoria
+        // No comparar mientras el servicio aún está cargando la lista inicial,
+        // para evitar duplicados y ArgumentException en el ToDictionary.
+        if (_connectionService.IsStarting) return;
+
+        // Estado actual en memoria — usamos GroupBy para ser robustos ante
+        // cualquier duplicado residual que pudiera existir en la colección.
         var current = _connectionService.Readers
-            .ToDictionary(r => r.Reader.IdReader, r => r.Reader);
+            .GroupBy(r => r.Reader.IdReader)
+            .ToDictionary(g => g.Key, g => g.First().Reader);
 
         // Estado en BD (incluyendo soft-deleted para detectar bajas)
         var dbReaders = (await _readerRepo.GetAllAsync(ct)).ToList();
         var dbMap     = dbReaders
             .Where(r => !r.Deleted)
-            .ToDictionary(r => r.IdReader);
+            .GroupBy(r => r.IdReader)
+            .ToDictionary(g => g.Key, g => g.First());
 
         var diff = new ReaderSyncDiff();
 

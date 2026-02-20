@@ -72,13 +72,17 @@ public partial class App : Application
             Log.Information("Primer arranque: config de BD generada en ProgramData.");
         }
 
-        // Arrancar lectores en background (no bloquea la UI)
+        // Arrancar lectores en background y esperar a que termine antes de iniciar el sync.
+        // Si el sync arranca antes de que StartAsync haya poblado _readers, se producen
+        // duplicados en la colección y ArgumentException en el ToDictionary del diff.
         var readerService = _host.Services.GetRequiredService<IReaderConnectionService>();
-        _ = Task.Run(() => readerService.StartAsync());
+        var syncService   = _host.Services.GetRequiredService<ReaderSyncService>();
 
-        // Arrancar sincronización multi-instancia
-        var syncService = _host.Services.GetRequiredService<ReaderSyncService>();
-        syncService.Start();
+        _ = Task.Run(async () =>
+        {
+            await readerService.StartAsync();
+            syncService.Start();   // Solo arranca una vez que la carga inicial ha terminado
+        });
 
         var loginWindow = _host.Services.GetRequiredService<LoginWindow>();
         loginWindow.Show();

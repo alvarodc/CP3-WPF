@@ -1,5 +1,6 @@
 using CardPass3.WPF.Services.Navigation;
 using CardPass3.WPF.Services.Readers;
+using System.Collections.Specialized;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
@@ -34,20 +35,42 @@ public partial class ShellViewModel : ObservableObject
     public ShellViewModel(IReaderConnectionService readerService, INavigationService navigation)
     {
         _readerService = readerService;
-        _navigation = navigation;
+        _navigation    = navigation;
 
-        // Watch the connecting flag to update status bar
-        // ReaderConnectionService updates IsStarting while the initial sweep runs
+        // Escuchar cambios en la colección (altas/bajas de lectores)
+        _readerService.Readers.CollectionChanged += OnReadersCollectionChanged;
+
+        // Suscribir a los lectores ya cargados al construirse el ViewModel
+        foreach (var info in _readerService.Readers)
+            info.PropertyChanged += OnReaderInfoPropertyChanged;
+
         MonitorReadersAsync();
+    }
+
+    private void OnReadersCollectionChanged(object? sender,
+        System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (e.NewItems is not null)
+            foreach (ReaderConnectionInfo info in e.NewItems)
+                info.PropertyChanged += OnReaderInfoPropertyChanged;
+
+        if (e.OldItems is not null)
+            foreach (ReaderConnectionInfo info in e.OldItems)
+                info.PropertyChanged -= OnReaderInfoPropertyChanged;
+
+        UpdateReadersStatus();
+    }
+
+    private void OnReaderInfoPropertyChanged(object? sender,
+        System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ReaderConnectionInfo.State))
+            UpdateReadersStatus();
     }
 
     private async void MonitorReadersAsync()
     {
         ReadersLoading = true;
-
-        // Suscribir ANTES del bucle para no perder eventos si el servicio
-        // termina de arrancar justo mientras esperamos.
-        _readerService.ConnectionStateChanged += _ => UpdateReadersStatus();
 
         while (_readerService.IsStarting)
             await Task.Delay(200);
@@ -58,13 +81,12 @@ public partial class ShellViewModel : ObservableObject
 
     private void UpdateReadersStatus()
     {
-        // El evento ConnectionStateChanged puede venir de un hilo de red — marshalizar al UI thread.
-        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
-        {
-            var connected = _readerService.Readers.Count(r => r.State == ReaderConnectionState.ReaderConnected);
-            var total     = _readerService.Readers.Count;
-            ReadersStatus = $"Lectores: {connected}/{total} conectados";
-        });
+        // Ya estamos en el UI thread porque ReaderConnectionService despacha
+        // los cambios de estado con OnUiThread(). UpdateReadersStatus puede
+        // llamarse también desde CollectionChanged (UI thread), así que es seguro.
+        var connected = _readerService.Readers.Count(r => r.State == ReaderConnectionState.ReaderConnected);
+        var total     = _readerService.Readers.Count;
+        ReadersStatus = $"Lectores: {connected}/{total} conectados";
     }
 
     [RelayCommand]

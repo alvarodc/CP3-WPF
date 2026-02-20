@@ -5,6 +5,7 @@ using CardPass3.WPF.Services.Readers;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.Windows;
 
 namespace CardPass3.WPF.Modules.Readers.ViewModels;
@@ -30,15 +31,42 @@ public partial class ReadersViewModel : ObservableObject
         _connectionService = connectionService;
         _areaRepo          = areaRepo;
 
-        _connectionService.Readers.CollectionChanged += (_, _) =>
-        {
-            OnPropertyChanged(nameof(ConnectedCount));
-            OnPropertyChanged(nameof(TotalCount));
-        };
-        _connectionService.ConnectionStateChanged += _ =>
-        {
-            OnPropertyChanged(nameof(ConnectedCount));
-        };
+        // Cuando se añade o elimina un lector de la colección, reconectar los listeners
+        // y notificar los contadores
+        _connectionService.Readers.CollectionChanged += OnReadersCollectionChanged;
+
+        // Suscribir a los lectores ya existentes al arrancar
+        foreach (var info in _connectionService.Readers)
+            info.PropertyChanged += OnReaderInfoPropertyChanged;
+    }
+
+    private void OnReadersCollectionChanged(object? sender,
+        System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        // Suscribir nuevos lectores añadidos
+        if (e.NewItems is not null)
+            foreach (ReaderConnectionInfo info in e.NewItems)
+                info.PropertyChanged += OnReaderInfoPropertyChanged;
+
+        // Desuscribir lectores eliminados
+        if (e.OldItems is not null)
+            foreach (ReaderConnectionInfo info in e.OldItems)
+                info.PropertyChanged -= OnReaderInfoPropertyChanged;
+
+        RefreshCounts();
+    }
+
+    private void OnReaderInfoPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        // Solo recalcular cuando cambia el estado de conexión
+        if (e.PropertyName is nameof(ReaderConnectionInfo.State))
+            RefreshCounts();
+    }
+
+    private void RefreshCounts()
+    {
+        OnPropertyChanged(nameof(ConnectedCount));
+        OnPropertyChanged(nameof(TotalCount));
     }
 
     // ── Conexión ──────────────────────────────────────────────────────────────

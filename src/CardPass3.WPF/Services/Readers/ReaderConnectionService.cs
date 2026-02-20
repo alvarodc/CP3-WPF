@@ -259,6 +259,12 @@ public sealed class ReaderConnectionService : IReaderConnectionService, IAsyncDi
         driver.StartConnect();
     }
 
+    // ── Handlers de eventos del driver ────────────────────────────────────────
+    // Todos los cambios se aplican en el UI thread para que los bindings de WPF
+    // (DataGrid, TextBlock) se actualicen sin CrossThread exceptions.
+    // Como ReaderConnectionInfo ahora es ObservableObject, cada asignación de
+    // propiedad dispara PropertyChanged automáticamente → la UI se refresca sola.
+
     private void OnDriverStateChanged(int readerId, TcpState tcpState)
     {
         var mapped = tcpState switch
@@ -271,35 +277,51 @@ public sealed class ReaderConnectionService : IReaderConnectionService, IAsyncDi
             _                        => ReaderConnectionState.Failed
         };
 
-        UpdateInfo(readerId, info =>
+        OnUiThread(() =>
         {
-            info.State = mapped;
-            if (mapped == ReaderConnectionState.ReaderConnected)
-            { info.ConnectedAt = DateTime.UtcNow; info.ErrorMessage = null; }
-        });
+            var info = _readers.FirstOrDefault(r => r.Reader.IdReader == readerId);
+            if (info is null) return;
 
-        var info = _readers.FirstOrDefault(r => r.Reader.IdReader == readerId);
-        if (info is not null) SafeRaise(() => ConnectionStateChanged(info));
+            info.State         = mapped;
+            info.LastAttemptAt = DateTime.UtcNow;
+            if (mapped == ReaderConnectionState.ReaderConnected)
+            {
+                info.ConnectedAt  = DateTime.UtcNow;
+                info.ErrorMessage = null;
+            }
+            SafeRaise(() => ConnectionStateChanged(info));
+        });
     }
 
     private void OnDriverEvent(int readerId, LmpiEvent ev)
     {
-        var info = _readers.FirstOrDefault(r => r.Reader.IdReader == readerId);
-        if (info is not null) SafeRaise(() => EventReceived(info, ev));
+        OnUiThread(() =>
+        {
+            var info = _readers.FirstOrDefault(r => r.Reader.IdReader == readerId);
+            if (info is not null) SafeRaise(() => EventReceived(info, ev));
+        });
     }
 
     private void OnDriverAppState(int readerId, AppState state)
     {
-        UpdateInfo(readerId, info => info.AppState = state);
-        var info = _readers.FirstOrDefault(r => r.Reader.IdReader == readerId);
-        if (info is not null) SafeRaise(() => ConnectionStateChanged(info));
+        OnUiThread(() =>
+        {
+            var info = _readers.FirstOrDefault(r => r.Reader.IdReader == readerId);
+            if (info is null) return;
+            info.AppState = state;
+            SafeRaise(() => ConnectionStateChanged(info));
+        });
     }
 
     private void OnDriverReaderState(int readerId, ReaderState state)
     {
-        UpdateInfo(readerId, info => info.ReaderState = state);
-        var info = _readers.FirstOrDefault(r => r.Reader.IdReader == readerId);
-        if (info is not null) SafeRaise(() => ConnectionStateChanged(info));
+        OnUiThread(() =>
+        {
+            var info = _readers.FirstOrDefault(r => r.Reader.IdReader == readerId);
+            if (info is null) return;
+            info.ReaderState = state;
+            SafeRaise(() => ConnectionStateChanged(info));
+        });
     }
 
     private async Task<TimeSpan> GetRetryIntervalAsync(CancellationToken ct)

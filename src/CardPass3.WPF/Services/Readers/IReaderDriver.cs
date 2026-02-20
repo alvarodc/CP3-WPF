@@ -1,5 +1,6 @@
 using CardPass3.WPF.Data.Models;
 using CardPass3.WPF.Services.Readers.Lmpi;
+using CommunityToolkit.Mvvm.ComponentModel;
 using System.Collections.ObjectModel;
 
 namespace CardPass3.WPF.Services.Readers;
@@ -14,18 +15,33 @@ public enum ReaderConnectionState
     Disconnected
 }
 
-public sealed class ReaderConnectionInfo
+/// <summary>
+/// Modelo observable que representa el estado en vivo de un lector.
+/// Al heredar de ObservableObject, cada cambio de propiedad notifica
+/// automáticamente al DataGrid y a cualquier binding de la UI sin
+/// necesidad de recrear la colección ni hacer Invoke manual.
+/// </summary>
+public sealed partial class ReaderConnectionInfo : ObservableObject
 {
-    public required Reader Reader      { get; set; }
-    public ReaderConnectionState State { get; set; } = ReaderConnectionState.Idle;
-    public AppState    AppState        { get; set; } = AppState.Control;
-    public ReaderState ReaderState     { get; set; } = ReaderState.Control;
-    public string?     ErrorMessage    { get; set; }
-    public DateTime?   ConnectedAt     { get; set; }
-    public DateTime?   LastAttemptAt   { get; set; }
+    [ObservableProperty] private Reader _reader = null!;
+    [ObservableProperty] private ReaderConnectionState _state = ReaderConnectionState.Idle;
+    [ObservableProperty] private AppState    _appState    = AppState.Control;
+    [ObservableProperty] private ReaderState _readerState = ReaderState.Control;
+    [ObservableProperty] private string?     _errorMessage;
+    [ObservableProperty] private DateTime?   _connectedAt;
+    [ObservableProperty] private DateTime?   _lastAttemptAt;
 
     public bool IsOperational => State == ReaderConnectionState.ReaderConnected;
     public bool IsEmergency   => AppState == AppState.Emergency || ReaderState == ReaderState.Emergency;
+
+    // Recalcular propiedades derivadas cuando cambia State, AppState o ReaderState
+    partial void OnStateChanged(ReaderConnectionState value)
+    {
+        OnPropertyChanged(nameof(IsOperational));
+        OnPropertyChanged(nameof(IsEmergency));
+    }
+    partial void OnAppStateChanged(AppState value)    => OnPropertyChanged(nameof(IsEmergency));
+    partial void OnReaderStateChanged(ReaderState value) => OnPropertyChanged(nameof(IsEmergency));
 }
 
 public interface IReaderConnectionService

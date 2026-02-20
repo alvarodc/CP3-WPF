@@ -1,76 +1,139 @@
 <UserControl x:Class="CardPass3.WPF.Modules.Readers.Views.ReadersView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:conv="clr-namespace:CardPass3.WPF.Core.Converters"
-             xmlns:vm="clr-namespace:CardPass3.WPF.Modules.Readers.ViewModels">
+             xmlns:conv="clr-namespace:CardPass3.WPF.Core.Converters">
 
     <UserControl.Resources>
         <conv:ReaderStateToLabelConverter   x:Key="StateLabel"/>
         <conv:ReaderStateToBrushConverter   x:Key="StateBrush"/>
         <conv:BoolToVisibilityConverter     x:Key="BoolToVis"/>
+        <conv:InverseBoolToVisibilityConverter x:Key="InvBoolToVis"/>
+        <conv:StringNotEmptyToVisibilityConverter x:Key="StringToVis"/>
     </UserControl.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>  <!-- Header + toolbar -->
             <RowDefinition Height="*"/>     <!-- Grid -->
-            <RowDefinition Height="Auto"/>  <!-- Action bar -->
+            <RowDefinition Height="Auto"/>  <!-- Status bar -->
         </Grid.RowDefinitions>
 
-        <!-- ── HEADER ────────────────────────────────────────── -->
+        <!-- ── HEADER + TOOLBAR ──────────────────────────────────── -->
         <DockPanel Grid.Row="0" Margin="0,0,0,16">
-            <StackPanel DockPanel.Dock="Left">
+
+            <!-- Título y contador -->
+            <StackPanel DockPanel.Dock="Left" VerticalAlignment="Center">
                 <TextBlock Text="Lectores"
-                           FontFamily="Segoe UI Light"
-                           FontSize="22"
+                           FontFamily="Segoe UI Light" FontSize="22"
                            Foreground="{StaticResource TextPrimaryBrush}"/>
-                <TextBlock FontFamily="Segoe UI"
-                           FontSize="12"
+                <TextBlock FontFamily="Segoe UI" FontSize="12"
                            Foreground="{StaticResource TextSecondaryBrush}"
                            Margin="0,2,0,0">
-                    <Run Text="{Binding ConnectedCount, Mode=OneWay}"/>
-                    <Run Text=" conectados de "/>
-                    <Run Text="{Binding TotalCount, Mode=OneWay}"/>
+                    <TextBlock.Text>
+                        <MultiBinding StringFormat="{}{0} conectados de {1}">
+                            <Binding Path="ConnectedCount" Mode="OneWay"/>
+                            <Binding Path="TotalCount" Mode="OneWay"/>
+                        </MultiBinding>
+                    </TextBlock.Text>
                 </TextBlock>
             </StackPanel>
 
-            <!-- Toolbar (right side) -->
-            <StackPanel DockPanel.Dock="Right"
-                        Orientation="Horizontal"
-                        VerticalAlignment="Center">
+            <!-- Toolbar derecha -->
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+
+                <!-- CRUD -->
+                <Button Content="&#xE710; Nuevo"
+                        Style="{StaticResource Btn.Primary}"
+                        Command="{Binding AddReaderCommand}"
+                        Padding="14,0" Margin="0,0,6,0"/>
+                <Button Content="&#xE70F; Editar"
+                        Style="{StaticResource Btn.Ghost}"
+                        Command="{Binding EditReaderCommand}"
+                        Padding="14,0" Margin="0,0,6,0"/>
+                <Button Content="&#xE74D; Eliminar"
+                        Style="{StaticResource Btn.Ghost}"
+                        Command="{Binding DeleteReaderCommand}"
+                        Padding="14,0" Margin="0,0,16,0"
+                        Foreground="#C62828"/>
+
+                <!-- Separador visual -->
+                <Border Width="1" Height="20" Background="{StaticResource BorderBrush}" Margin="0,0,16,0"/>
+
+                <!-- Conexión -->
                 <Button Content="Conectar"
                         Style="{StaticResource Btn.Primary}"
                         Command="{Binding ConnectReaderCommand}"
-                        Margin="0,0,8,0"/>
+                        Margin="0,0,6,0"/>
                 <Button Content="Desconectar"
                         Style="{StaticResource Btn.Ghost}"
                         Command="{Binding DisconnectReaderCommand}"
-                        Margin="0,0,8,0"/>
+                        Margin="0,0,16,0"/>
+
+                <!-- Separador visual -->
+                <Border Width="1" Height="20" Background="{StaticResource BorderBrush}" Margin="0,0,16,0"/>
+
+                <!-- Habilitar/deshabilitar -->
+                <Button Content="Habilitar"
+                        Style="{StaticResource Btn.Ghost}"
+                        Command="{Binding EnableReaderCommand}"
+                        Margin="0,0,6,0"/>
+                <Button Content="Deshabilitar"
+                        Style="{StaticResource Btn.Ghost}"
+                        Command="{Binding DisableReaderCommand}"
+                        Margin="0,0,16,0"/>
+
+                <!-- Separador visual -->
+                <Border Width="1" Height="20" Background="{StaticResource BorderBrush}" Margin="0,0,16,0"/>
+
+                <!-- Comandos al hardware -->
                 <Button Content="Abrir relé"
                         Style="{StaticResource Btn.Ghost}"
-                        Command="{Binding OpenRelayCommand}"/>
+                        Command="{Binding OpenRelayCommand}"
+                        Margin="0,0,6,0"/>
+                <Button Content="&#xE72C; Reiniciar"
+                        Style="{StaticResource Btn.Ghost}"
+                        Command="{Binding RestartReaderCommand}"/>
             </StackPanel>
         </DockPanel>
 
-        <!-- ── READERS GRID ───────────────────────────────────── -->
+        <!-- ── GRID DE LECTORES ───────────────────────────────────── -->
         <Border Grid.Row="1" Style="{StaticResource Card}" Padding="0">
             <DataGrid Style="{StaticResource Grid.Base}"
                       ItemsSource="{Binding Readers}"
                       SelectedItem="{Binding SelectedReader}"
-                      RowHeight="42">
-
-                <!-- Estado -->
+                      RowHeight="44">
                 <DataGrid.Columns>
-                    <DataGridTemplateColumn Header="Estado" Width="120" SortMemberPath="State">
+
+                    <!-- Estado -->
+                    <DataGridTemplateColumn Header="Estado" Width="130" SortMemberPath="State">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <Border Style="{StaticResource Badge.State}"
                                         Background="{Binding State, Converter={StaticResource StateBrush}}">
                                     <TextBlock Text="{Binding State, Converter={StaticResource StateLabel}}"
-                                               FontFamily="Segoe UI Semibold"
-                                               FontSize="11"
+                                               FontFamily="Segoe UI Semibold" FontSize="11"
                                                Foreground="White"/>
                                 </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Habilitado -->
+                    <DataGridTemplateColumn Header="Act." Width="44" SortMemberPath="Reader.Enabled">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Ellipse Width="8" Height="8" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="#43A047"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Reader.Enabled}" Value="False">
+                                                    <Setter Property="Fill" Value="#BDBDBD"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Ellipse.Style>
+                                </Ellipse>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
@@ -88,10 +151,10 @@
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
 
-                    <!-- IP -->
+                    <!-- IP efectiva -->
                     <DataGridTextColumn Header="Dirección IP"
                                         Binding="{Binding Reader.EffectiveIp}"
-                                        Width="140">
+                                        Width="150">
                         <DataGridTextColumn.ElementStyle>
                             <Style TargetType="TextBlock">
                                 <Setter Property="FontFamily" Value="Consolas"/>
@@ -116,35 +179,46 @@
                         </DataGridTextColumn.ElementStyle>
                     </DataGridTextColumn>
 
-                    <!-- Área -->
-                    <DataGridTextColumn Header="Área"
-                                        Binding="{Binding Reader.AreasIdArea}"
-                                        Width="100"/>
-
-                    <!-- Último intento -->
-                    <DataGridTemplateColumn Header="Último intento" Width="160" SortMemberPath="LastAttemptAt">
+                    <!-- Tipo -->
+                    <DataGridTemplateColumn Header="Tipo" Width="80" SortMemberPath="Reader.ControlType">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <TextBlock FontFamily="Segoe UI"
-                                           FontSize="11"
-                                           Foreground="{StaticResource TextSecondaryBrush}"
-                                           VerticalAlignment="Center">
-                                    <TextBlock.Text>
-                                        <Binding Path="LastAttemptAt" StringFormat="{}{0:HH:mm:ss}"
-                                                 TargetNullValue="—"/>
-                                    </TextBlock.Text>
+                                <TextBlock FontFamily="Segoe UI" FontSize="11"
+                                           VerticalAlignment="Center"
+                                           Foreground="{StaticResource TextSecondaryBrush}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="Salida"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Reader.ControlType}" Value="0">
+                                                    <Setter Property="Text" Value="Entrada"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
                                 </TextBlock>
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
 
-                    <!-- Error -->
-                    <DataGridTemplateColumn Header="Detalle" Width="200">
+                    <!-- Último intento -->
+                    <DataGridTemplateColumn Header="Último intento" Width="120" SortMemberPath="LastAttemptAt">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock FontFamily="Segoe UI" FontSize="11"
+                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                           VerticalAlignment="Center"
+                                           Text="{Binding LastAttemptAt, StringFormat={}{0:HH:mm:ss}, TargetNullValue=—}"/>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+
+                    <!-- Detalle de error -->
+                    <DataGridTemplateColumn Header="Detalle" Width="180">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding ErrorMessage, TargetNullValue='—'}"
-                                           FontFamily="Segoe UI"
-                                           FontSize="11"
+                                           FontFamily="Segoe UI" FontSize="11"
                                            Foreground="#EF5350"
                                            VerticalAlignment="Center"
                                            TextTrimming="CharacterEllipsis"
@@ -157,27 +231,21 @@
             </DataGrid>
         </Border>
 
-        <!-- ── ACTION BAR ─────────────────────────────────────── -->
+        <!-- ── STATUS BAR ────────────────────────────────────────── -->
         <Border Grid.Row="2"
                 Background="{StaticResource SurfaceBrush}"
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="1"
                 CornerRadius="6"
                 Padding="16,10"
-                Margin="0,12,0,0"
+                Margin="0,10,0,0"
                 Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="&#xE117;"
-                           FontFamily="Segoe MDL2 Assets"
-                           FontSize="13"
-                           Foreground="{StaticResource AccentBrush}"
-                           VerticalAlignment="Center"/>
-                <TextBlock Text="Operación en curso…"
-                           FontFamily="Segoe UI"
-                           FontSize="12"
+                <TextBlock Text="&#xE117;" FontFamily="Segoe MDL2 Assets" FontSize="13"
+                           Foreground="{StaticResource AccentBrush}" VerticalAlignment="Center"/>
+                <TextBlock Text="Operación en curso…" FontFamily="Segoe UI" FontSize="12"
                            Foreground="{StaticResource TextSecondaryBrush}"
-                           Margin="8,0,0,0"
-                           VerticalAlignment="Center"/>
+                           Margin="8,0,0,0" VerticalAlignment="Center"/>
             </StackPanel>
         </Border>
 

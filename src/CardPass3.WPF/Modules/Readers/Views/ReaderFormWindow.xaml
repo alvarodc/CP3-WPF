@@ -1,0 +1,153 @@
+<Window x:Class="CardPass3.WPF.Modules.Readers.Views.ReaderFormWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:conv="clr-namespace:CardPass3.WPF.Core.Converters"
+        Title="{Binding Title}"
+        Width="480" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="{StaticResource BackgroundBrush}">
+
+    <Window.Resources>
+        <conv:BoolToVisibilityConverter x:Key="BoolToVis"/>
+
+        <!-- Label style inline para no depender de estilos globales de TextBlock -->
+        <Style x:Key="FormLabel" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="FontFamily"  Value="Segoe UI"/>
+            <Setter Property="FontSize"    Value="11"/>
+            <Setter Property="FontWeight"  Value="SemiBold"/>
+            <Setter Property="Foreground"  Value="{StaticResource TextSecondaryBrush}"/>
+            <Setter Property="Margin"      Value="0,0,0,4"/>
+        </Style>
+
+        <Style x:Key="Input.Combo" TargetType="ComboBox">
+            <Setter Property="Height"      Value="36"/>
+            <Setter Property="FontFamily"  Value="Segoe UI"/>
+            <Setter Property="FontSize"    Value="13"/>
+            <Setter Property="Padding"     Value="8,0"/>
+            <Setter Property="Background"  Value="{StaticResource SurfaceBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        </Style>
+    </Window.Resources>
+
+    <StackPanel Margin="28,24,28,24">
+
+        <!-- ── Header ─────────────────────────────────────────────── -->
+        <TextBlock Text="{Binding Title}"
+                   FontFamily="Segoe UI Light"
+                   FontSize="20"
+                   Foreground="{StaticResource TextPrimaryBrush}"
+                   Margin="0,0,0,20"/>
+
+        <!-- ── Descripción ────────────────────────────────────────── -->
+        <TextBlock Text="Descripción" Style="{StaticResource FormLabel}"/>
+        <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
+                 Style="{StaticResource Input.Text}"
+                 Margin="0,0,0,14"/>
+
+        <!-- ── Nombre único ───────────────────────────────────────── -->
+        <TextBlock Text="Nombre único (UniqueName)" Style="{StaticResource FormLabel}"/>
+        <TextBox Text="{Binding UniqueName, UpdateSourceTrigger=PropertyChanged}"
+                 Style="{StaticResource Input.Text}"
+                 Margin="0,0,0,4"/>
+        <TextBlock Text="Solo letras, números y guiones. Identifica el lector dentro de la Pi."
+                   FontFamily="Segoe UI" FontSize="10"
+                   Foreground="{StaticResource TextSecondaryBrush}"
+                   Margin="0,0,0,14"/>
+
+        <!-- ── IP + IP efectiva + Puerto (fila) ──────────────────── -->
+        <Grid Margin="0,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="90"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Column="0" Grid.Row="0" Text="Dirección IP"         Style="{StaticResource FormLabel}"/>
+            <TextBlock Grid.Column="2" Grid.Row="0" Text="IP efectiva (override)" Style="{StaticResource FormLabel}"/>
+            <TextBlock Grid.Column="4" Grid.Row="0" Text="Puerto"               Style="{StaticResource FormLabel}"/>
+
+            <TextBox Grid.Column="0" Grid.Row="1"
+                     Text="{Binding IpAddress, UpdateSourceTrigger=PropertyChanged}"
+                     Style="{StaticResource Input.Text}"/>
+            <TextBox Grid.Column="2" Grid.Row="1"
+                     Text="{Binding IpAddressEffective, UpdateSourceTrigger=PropertyChanged}"
+                     Style="{StaticResource Input.Text}"/>
+            <TextBox Grid.Column="4" Grid.Row="1"
+                     Text="{Binding Port, UpdateSourceTrigger=PropertyChanged}"
+                     Style="{StaticResource Input.Text}"/>
+        </Grid>
+
+        <!-- ── Área + Tipo de control (fila) ─────────────────────── -->
+        <Grid Margin="0,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="160"/>
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Column="0" Grid.Row="0" Text="Área"             Style="{StaticResource FormLabel}"/>
+            <TextBlock Grid.Column="2" Grid.Row="0" Text="Tipo de control"  Style="{StaticResource FormLabel}"/>
+
+            <ComboBox Grid.Column="0" Grid.Row="1"
+                      Style="{StaticResource Input.Combo}"
+                      ItemsSource="{Binding Areas}"
+                      SelectedItem="{Binding SelectedArea}"
+                      DisplayMemberPath="AreaName"/>
+
+            <ComboBox Grid.Column="2" Grid.Row="1"
+                      Style="{StaticResource Input.Combo}"
+                      ItemsSource="{Binding ControlTypes}"
+                      SelectedIndex="{Binding ControlType}"/>
+        </Grid>
+
+        <!-- ── Habilitado ─────────────────────────────────────────── -->
+        <CheckBox Content="Lector habilitado"
+                  IsChecked="{Binding Enabled}"
+                  FontFamily="Segoe UI"
+                  FontSize="13"
+                  Foreground="{StaticResource TextPrimaryBrush}"
+                  Margin="0,0,0,20"/>
+
+        <!-- ── Error de validación ────────────────────────────────── -->
+        <Border Background="#FFF3E0"
+                BorderBrush="#FFB74D"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="12,8"
+                Margin="0,0,0,16"
+                Visibility="{Binding ValidationError, Converter={StaticResource BoolToVis}}">
+            <TextBlock Text="{Binding ValidationError}"
+                       FontFamily="Segoe UI"
+                       FontSize="12"
+                       Foreground="#E65100"
+                       TextWrapping="Wrap"/>
+        </Border>
+
+        <!-- ── Botones ────────────────────────────────────────────── -->
+        <DockPanel>
+            <Button DockPanel.Dock="Right"
+                    Content="Guardar"
+                    Style="{StaticResource Btn.Primary}"
+                    Command="{Binding ConfirmCommand}"
+                    Width="100"/>
+            <Button DockPanel.Dock="Right"
+                    Content="Cancelar"
+                    Style="{StaticResource Btn.Ghost}"
+                    Command="{Binding CancelCommand}"
+                    Width="90"
+                    Margin="0,0,8,0"/>
+        </DockPanel>
+
+    </StackPanel>
+</Window>

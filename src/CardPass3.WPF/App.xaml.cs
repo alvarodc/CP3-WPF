@@ -25,6 +25,31 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // ── Captura de excepciones no manejadas ───────────────────────────────
+        DispatcherUnhandledException += (s, ex) =>
+        {
+            Log.Error(ex.Exception, "Excepción no manejada en el hilo de UI");
+            MessageBox.Show(
+                $"Se ha producido un error inesperado:\n\n{ex.Exception.Message}",
+                "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            ex.Handled = true; // Evita que la app se cierre
+        };
+
+        AppDomain.CurrentDomain.UnhandledException += (s, ex) =>
+        {
+            var exception = ex.ExceptionObject as Exception;
+            Log.Fatal(exception, "Excepción crítica no manejada (AppDomain)");
+            MessageBox.Show(
+                $"Error crítico:\n\n{exception?.Message ?? ex.ExceptionObject.ToString()}",
+                "Error crítico", MessageBoxButton.OK, MessageBoxImage.Error);
+        };
+
+        TaskScheduler.UnobservedTaskException += (s, ex) =>
+        {
+            Log.Warning(ex.Exception, "Excepción no observada en Task");
+            ex.SetObserved(); // Evita que tumbe el proceso
+        };
+
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
             .WriteTo.File("logs/cardpass3-.log",
@@ -68,6 +93,7 @@ public partial class App : Application
         // ── Repositories ──────────────────────────────────────────────────────
         services.AddSingleton<IOperatorRepository, OperatorRepository>();
         services.AddSingleton<IReaderRepository, ReaderRepository>();
+        services.AddSingleton<IAreaRepository, AreaRepository>();
         services.AddSingleton<IEventRepository, EventRepository>();
         services.AddSingleton<IConfigurationRepository, ConfigurationRepository>();
 
@@ -97,7 +123,7 @@ public partial class App : Application
         if (_host is not null)
         {
             // Parar sync y desconectar lectores limpiamente
-            var syncService   = _host.Services.GetRequiredService<ReaderSyncService>();
+            var syncService = _host.Services.GetRequiredService<ReaderSyncService>();
             var readerService = _host.Services.GetRequiredService<IReaderConnectionService>();
 
             await syncService.StopAsync();

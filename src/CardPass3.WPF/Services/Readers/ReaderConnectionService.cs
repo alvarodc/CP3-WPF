@@ -10,8 +10,8 @@ namespace CardPass3.WPF.Services.Readers;
 
 /// <summary>
 /// Orquestador central de conexiones a lectores.
-/// Gestiona el ciclo de vida de todos los LmpiDriver, mantiene el estado
-/// observable para la UI y enruta eventos hardware al resto del sistema.
+/// La lista en memoria refleja TODOS los lectores no borrados (enabled o no),
+/// para que el sync multi-instancia pueda comparar correctamente sin duplicados.
 /// </summary>
 public sealed class ReaderConnectionService : IReaderConnectionService, IAsyncDisposable
 {
@@ -49,14 +49,22 @@ public sealed class ReaderConnectionService : IReaderConnectionService, IAsyncDi
         IsStarting = true;
         try
         {
-            var readers = (await _readerRepo.GetAllEnabledAsync(ct)).ToList();
-            _logger.LogInformation("Starting connections for {Count} enabled readers", readers.Count);
+            // Cargar TODOS los lectores no borrados — no solo los habilitados.
+            // Así el sync multi-instancia puede comparar sin duplicados.
+            var allReaders = (await _readerRepo.GetAllAsync(ct)).ToList();
+            _logger.LogInformation(
+                "Loading {Total} readers ({Enabled} enabled)",
+                allReaders.Count,
+                allReaders.Count(r => r.Enabled));
 
-            foreach (var reader in readers)
+            foreach (var reader in allReaders)
                 OnUiThread(() => _readers.Add(CreateInfo(reader)));
 
+            // Solo conectar los habilitados, en paralelo
+            var toConnect = allReaders.Where(r => r.Enabled).ToList();
             using var semaphore = new SemaphoreSlim(MaxParallelAtStartup);
-            var tasks = readers.Select(r => Task.Run(async () =>
+
+            var tasks = toConnect.Select(r => Task.Run(async () =>
             {
                 await semaphore.WaitAsync(ct);
                 try   { await StartDriverAsync(r, ct); }
@@ -98,33 +106,52 @@ public sealed class ReaderConnectionService : IReaderConnectionService, IAsyncDi
     {
         if (!_drivers.TryRemove(readerId, out var driver)) return;
         await driver.DisposeAsync();
-        UpdateInfo(readerId, info => { info.State = ReaderConnectionState.Disconnected; info.ErrorMessage = null; });
+        UpdateInfo(readerId, info =>
+        {
+            info.State        = ReaderConnectionState.Disconnected;
+            info.ErrorMessage = null;
+        });
     }
 
     // ── Comandos al lector ────────────────────────────────────────────────────
 
-    public void OpenRelay(int readerId)  { if (_drivers.TryGetValue(readerId, out var d)) d.OpenOnce(); }
-    public void Restart(int readerId)    { if (_drivers.TryGetValue(readerId, out var d)) d.Restart(); }
-    public void EmergencyOpen()          { foreach (var d in _drivers.Values) d.Emergency(); }
-    public void EmergencyEnd()           { foreach (var d in _drivers.Values) d.EmergencyEnd(); }
+    public void OpenRelay(int readerId)    { if (_drivers.TryGetValue(readerId, out var d)) d.OpenOnce(); }
+    public void Restart(int readerId)      { if (_drivers.TryGetValue(readerId, out var d)) d.Restart(); }
+    public void EmergencyOpen()            { foreach (var d in _drivers.Values) d.Emergency(); }
+    public void EmergencyEnd()             { foreach (var d in _drivers.Values) d.EmergencyEnd(); }
 
     // ── CRUD ──────────────────────────────────────────────────────────────────
 
     public async Task<ReaderConnectionInfo> AddReaderAsync(Reader reader, CancellationToken ct = default)
     {
         await _readerRepo.InsertAsync(reader, ct);
-        var info = CreateInfo(reader);
+        // Releer de BD para obtener el IdReader generado
+        var saved = (await _readerRepo.GetAllAsync(ct))
+            .OrderByDescending(r => r.IdReader)
+            .First(r => r.UniqueName == reader.UniqueName);
+
+        var info = CreateInfo(saved);
         OnUiThread(() => _readers.Add(info));
-        if (reader.Enabled) await StartDriverAsync(reader, ct);
+        if (saved.Enabled) await StartDriverAsync(saved, ct);
         return info;
     }
 
     public async Task UpdateReaderAsync(Reader reader, CancellationToken ct = default)
     {
         await _readerRepo.UpdateAsync(reader, ct);
+
+        // Desconectar driver actual (IP/puerto puede haber cambiado)
         if (_drivers.TryRemove(reader.IdReader, out var old)) await old.DisposeAsync();
-        UpdateInfo(reader.IdReader, info => info.Reader = reader);
-        if (reader.Enabled) await StartDriverAsync(reader, ct);
+
+        UpdateInfo(reader.IdReader, info =>
+        {
+            info.Reader = reader;
+            info.State  = ReaderConnectionState.Idle;
+        });
+
+        // Reconectar solo si está habilitado
+        if (reader.Enabled)
+            await StartDriverAsync(reader, ct);
     }
 
     public async Task RemoveReaderAsync(int readerId, CancellationToken ct = default)
@@ -138,14 +165,39 @@ public sealed class ReaderConnectionService : IReaderConnectionService, IAsyncDi
         });
     }
 
-    // ── Multi-instancia (llamado por ReaderSyncService) ───────────────────────
+    public async Task SetEnabledAsync(int readerId, bool enabled, CancellationToken ct = default)
+    {
+        var reader = await _readerRepo.GetByIdAsync(readerId, ct);
+        if (reader is null) return;
+
+        reader.Enabled = enabled;
+        await _readerRepo.UpdateAsync(reader, ct);
+
+        if (!enabled)
+        {
+            if (_drivers.TryRemove(readerId, out var driver)) await driver.DisposeAsync();
+            UpdateInfo(readerId, info =>
+            {
+                info.Reader  = reader;
+                info.State   = ReaderConnectionState.Disconnected;
+            });
+        }
+        else
+        {
+            UpdateInfo(readerId, info => info.Reader = reader);
+            await StartDriverAsync(reader, ct);
+        }
+    }
+
+    // ── Sincronización multi-instancia ────────────────────────────────────────
 
     internal async Task ApplySyncDiffAsync(ReaderSyncDiff diff, CancellationToken ct)
     {
         foreach (var reader in diff.Added)
         {
             _logger.LogInformation("[Sync] Reader {Id} added from another instance", reader.IdReader);
-            OnUiThread(() => _readers.Add(CreateInfo(reader)));
+            var info = CreateInfo(reader);
+            OnUiThread(() => _readers.Add(info));
             if (reader.Enabled) await StartDriverAsync(reader, ct);
         }
 
@@ -153,7 +205,7 @@ public sealed class ReaderConnectionService : IReaderConnectionService, IAsyncDi
         {
             _logger.LogInformation("[Sync] Reader {Id} updated from another instance", reader.IdReader);
             if (_drivers.TryRemove(reader.IdReader, out var old)) await old.DisposeAsync();
-            UpdateInfo(reader.IdReader, info => info.Reader = reader);
+            UpdateInfo(reader.IdReader, info => { info.Reader = reader; info.State = ReaderConnectionState.Idle; });
             if (reader.Enabled) await StartDriverAsync(reader, ct);
         }
 
@@ -176,13 +228,13 @@ public sealed class ReaderConnectionService : IReaderConnectionService, IAsyncDi
         var retryInterval = await GetRetryIntervalAsync(ct);
         var ip            = await GetEffectiveIpAsync(reader, ct);
 
-        var driver = new LmpiDriver(ip, reader.Port, reader.UniqueName,
+        var driver = new LmpiDriver(ip, reader.Port, reader.UniqueName ?? reader.ReaderDescription,
             retryInterval, _loggerFactory.CreateLogger<LmpiDriver>());
 
-        driver.ConnectionStateChanged += (d, state)  => OnDriverStateChanged(reader.IdReader, state);
-        driver.EventReceived          += (d, ev)      => OnDriverEvent(reader.IdReader, ev);
-        driver.AppStateChanged        += (d, state)   => OnDriverAppState(reader.IdReader, state);
-        driver.ReaderStateChanged     += (d, state)   => OnDriverReaderState(reader.IdReader, state);
+        driver.ConnectionStateChanged += (_, state) => OnDriverStateChanged(reader.IdReader, state);
+        driver.EventReceived          += (_, ev)    => OnDriverEvent(reader.IdReader, ev);
+        driver.AppStateChanged        += (_, state) => OnDriverAppState(reader.IdReader, state);
+        driver.ReaderStateChanged     += (_, state) => OnDriverReaderState(reader.IdReader, state);
 
         _drivers[reader.IdReader] = driver;
 
@@ -276,8 +328,6 @@ public sealed class ReaderConnectionService : IReaderConnectionService, IAsyncDi
 
     public async ValueTask DisposeAsync() => await StopAsync();
 }
-
-// ─── Diff para sincronización multi-instancia ─────────────────────────────────
 
 internal sealed class ReaderSyncDiff
 {

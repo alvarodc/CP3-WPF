@@ -33,6 +33,13 @@ namespace CardPass3.WPF.Data.Repositories.Interfaces
         Task<Dictionary<string, string?>> GetAllAsync(CancellationToken ct = default);
     }
 
+
+    public interface IAreaRepository
+    {
+        Task<IEnumerable<Area>> GetAllAsync(CancellationToken ct = default);
+        Task<Area?> GetByIdAsync(int id, CancellationToken ct = default);
+    }
+
     public record EventFilter(
         DateTime? From = null,
         DateTime? To = null,

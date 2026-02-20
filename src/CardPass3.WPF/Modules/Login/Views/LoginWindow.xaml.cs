@@ -47,11 +47,10 @@ public partial class LoginWindow : Window
                 dbConfig.ResetToDefault();
                 MessageBox.Show(
                     "La configuración se ha restablecido a los valores por defecto.\n\n" +
-                    "  Servidor:  localhost\n" +
-                    "  Puerto:    3306\n" +
-                    "  Usuario:   cardpass3\n" +
-                    "  Contraseña: cardpass3\n" +
-                    "  Base de datos: cardpass3\n\n" +
+                    "  Servidor:       localhost\n" +
+                    "  Puerto:         3306\n" +
+                    "  Usuario:        cardpass3\n" +
+                    "  Base de datos:  cardpass3\n\n" +
                     "Vuelve a intentar iniciar sesión.",
                     "Configuración restablecida", MessageBoxButton.OK, MessageBoxImage.Information);
                 break;

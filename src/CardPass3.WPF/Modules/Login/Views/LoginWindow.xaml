@@ -15,7 +15,6 @@
         <conv:InverseBoolToVisibilityConverter   x:Key="InvBoolToVis"/>
     </Window.Resources>
 
-    <!-- Drop shadow wrapper -->
     <Border Margin="12">
         <Border.Effect>
             <DropShadowEffect BlurRadius="24" ShadowDepth="4" Direction="270"
@@ -47,9 +46,9 @@
                 <Border MouseLeftButtonDown="Window_MouseLeftButtonDown">
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>  <!-- header -->
+                            <RowDefinition Height="*"/>     <!-- form -->
+                            <RowDefinition Height="Auto"/>  <!-- footer -->
                         </Grid.RowDefinitions>
 
                         <!-- HEADER -->
@@ -72,8 +71,7 @@
                                 </Canvas>
                             </Viewbox>
 
-                            <TextBlock HorizontalAlignment="Center"
-                                       Margin="0,14,0,0">
+                            <TextBlock HorizontalAlignment="Center" Margin="0,14,0,0">
                                 <Run Text="CardPass" FontFamily="Segoe UI" FontWeight="Light"
                                      FontSize="30" Foreground="#1A2E4A"/>
                                 <Run Text="3" FontFamily="Segoe UI" FontWeight="Bold"
@@ -81,48 +79,61 @@
                             </TextBlock>
 
                             <TextBlock Text="v4.0.0"
-                                       FontFamily="Segoe UI"
-                                       FontSize="11"
+                                       FontFamily="Segoe UI" FontSize="11"
                                        Foreground="#9E9E9E"
                                        HorizontalAlignment="Center"
                                        Margin="0,4,0,0"/>
                         </StackPanel>
 
-                        <!-- FORM -->
-                        <StackPanel Grid.Row="1" Margin="44,0,44,0">
+                        <!-- FORM — Grid con filas fijas para que el error no empuje el botón -->
+                        <Grid Grid.Row="1" Margin="44,0,44,0">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>  <!-- label operador -->
+                                <RowDefinition Height="Auto"/>  <!-- input operador -->
+                                <RowDefinition Height="Auto"/>  <!-- label contraseña -->
+                                <RowDefinition Height="Auto"/>  <!-- input contraseña -->
+                                <RowDefinition Height="44"/>    <!-- error: altura fija reservada -->
+                                <RowDefinition Height="Auto"/>  <!-- botón -->
+                            </Grid.RowDefinitions>
 
-                            <TextBlock Text="OPERADOR"
+                            <TextBlock Grid.Row="0" Text="OPERADOR"
                                        Style="{StaticResource T.Label}"
                                        Margin="0,0,0,6"/>
-                            <TextBox x:Name="TxtOperator"
+                            <TextBox Grid.Row="1"
+                                     x:Name="TxtOperator"
                                      Style="{StaticResource Input.Text}"
                                      Text="{Binding OperatorName, UpdateSourceTrigger=PropertyChanged}"
                                      KeyDown="Input_KeyDown"/>
 
-                            <TextBlock Text="CONTRASEÑA"
+                            <TextBlock Grid.Row="2" Text="CONTRASEÑA"
                                        Style="{StaticResource T.Label}"
                                        Margin="0,18,0,6"/>
-                            <PasswordBox x:Name="TxtPassword"
+                            <PasswordBox Grid.Row="3"
+                                         x:Name="TxtPassword"
                                          Style="{StaticResource Input.Password}"
                                          KeyDown="Input_KeyDown"/>
 
-                            <!-- Error message -->
-                            <Border Background="#FFF3E0"
+                            <!-- Error: ocupa la fila fija, nunca desplaza el botón -->
+                            <Border Grid.Row="4"
+                                    Background="#FFF3E0"
                                     CornerRadius="4"
-                                    Padding="10,8"
-                                    Margin="0,12,0,0"
+                                    Padding="10,0"
+                                    Margin="0,8,0,0"
+                                    VerticalAlignment="Center"
                                     Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}">
                                 <TextBlock Text="{Binding ErrorMessage}"
                                            FontFamily="Segoe UI"
                                            FontSize="12"
                                            Foreground="#E65100"
-                                           TextWrapping="Wrap"/>
+                                           TextWrapping="Wrap"
+                                           VerticalAlignment="Center"
+                                           Padding="0,6"/>
                             </Border>
 
-                            <!-- Login button — Content set ONCE via child element only -->
-                            <Button Style="{StaticResource Btn.Primary}"
+                            <Button Grid.Row="5"
+                                    Style="{StaticResource Btn.Primary}"
                                     Height="40"
-                                    Margin="0,20,0,0"
+                                    Margin="0,8,0,0"
                                     Command="{Binding LoginCommand}"
                                     CommandParameter="{Binding ElementName=TxtPassword, Path=Password}">
                                 <Grid>
@@ -136,8 +147,7 @@
                                                Visibility="{Binding IsLoggingIn, Converter={StaticResource BoolToVis}}"/>
                                 </Grid>
                             </Button>
-
-                        </StackPanel>
+                        </Grid>
 
                         <!-- FOOTER -->
                         <Border Grid.Row="2"
@@ -145,8 +155,7 @@
                                 BorderThickness="0,1,0,0"
                                 Margin="0,24,0,0"
                                 Padding="44,12">
-                            <TextBlock FontFamily="Segoe UI"
-                                       FontSize="11"
+                            <TextBlock FontFamily="Segoe UI" FontSize="11"
                                        Foreground="#BDBDBD"
                                        HorizontalAlignment="Center">
                                 <Run Text="© 2024 CardPass3  ·  Sistema de control de acceso"/>

@@ -26,6 +26,8 @@ public sealed class ReaderConnectionService : IReaderConnectionService, IAsyncDi
     public ObservableCollection<ReaderConnectionInfo> Readers => _readers;
     public bool IsStarting { get; private set; }
 
+    private int _startCalled = 0; // Guard para evitar doble arranque
+
     private const int MaxParallelAtStartup = 10;
 
     public event Action<ReaderConnectionInfo, LmpiEvent> EventReceived          = delegate { };
@@ -46,11 +48,16 @@ public sealed class ReaderConnectionService : IReaderConnectionService, IAsyncDi
 
     public async Task StartAsync(CancellationToken ct = default)
     {
+        // Evitar que StartAsync se ejecute más de una vez (p.ej. por llamadas concurrentes en el arranque)
+        if (Interlocked.Exchange(ref _startCalled, 1) != 0)
+        {
+            _logger.LogWarning("StartAsync called more than once — ignoring duplicate call.");
+            return;
+        }
+
         IsStarting = true;
         try
         {
-            // Cargar TODOS los lectores no borrados — no solo los habilitados.
-            // Así el sync multi-instancia puede comparar sin duplicados.
             var allReaders = (await _readerRepo.GetAllAsync(ct)).ToList();
             _logger.LogInformation(
                 "Loading {Total} readers ({Enabled} enabled)",
@@ -58,7 +65,11 @@ public sealed class ReaderConnectionService : IReaderConnectionService, IAsyncDi
                 allReaders.Count(r => r.Enabled));
 
             foreach (var reader in allReaders)
-                OnUiThread(() => _readers.Add(CreateInfo(reader)));
+            {
+                // Doble check: no añadir si ya existe (defensivo ante cualquier race residual)
+                if (_readers.All(r => r.Reader.IdReader != reader.IdReader))
+                    OnUiThread(() => _readers.Add(CreateInfo(reader)));
+            }
 
             // Solo conectar los habilitados, en paralelo
             var toConnect = allReaders.Where(r => r.Enabled).ToList();

@@ -45,21 +45,26 @@ public partial class ShellViewModel : ObservableObject
     {
         ReadersLoading = true;
 
+        // Suscribir ANTES del bucle para no perder eventos si el servicio
+        // termina de arrancar justo mientras esperamos.
+        _readerService.ConnectionStateChanged += _ => UpdateReadersStatus();
+
         while (_readerService.IsStarting)
-            await Task.Delay(500);
+            await Task.Delay(200);
 
         UpdateReadersStatus();
         ReadersLoading = false;
-
-        // Actualizar el status en tiempo real cuando cambia el estado de un lector
-        _readerService.ConnectionStateChanged += _ => UpdateReadersStatus();
     }
 
     private void UpdateReadersStatus()
     {
-        var connected = _readerService.Readers.Count(r => r.State == ReaderConnectionState.ReaderConnected);
-        var total     = _readerService.Readers.Count;
-        ReadersStatus = $"Lectores: {connected}/{total} conectados";
+        // El evento ConnectionStateChanged puede venir de un hilo de red — marshalizar al UI thread.
+        System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+        {
+            var connected = _readerService.Readers.Count(r => r.State == ReaderConnectionState.ReaderConnected);
+            var total     = _readerService.Readers.Count;
+            ReadersStatus = $"Lectores: {connected}/{total} conectados";
+        });
     }
 
     [RelayCommand]
